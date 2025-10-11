@@ -1,9 +1,10 @@
 # TOPSTEPB - Cloud Hyperparameter Optimization Factory
-Status: PRODUCTION READY - AWS cloud deployment approved
-Version: 4.0 - Cloud-Optimized Hyperparameter Factory (7/7 phases complete)
+TopStepx backtesting Hyperparameter Factory (7/7 phases complete)
 Author: blindsipher
 
 ## Program Overview and Current State
+
+***its CPU/ ram intenssive so putting it on an aws cluster might help***
 
 TopStepB is a cloud-scalable hyperparameter optimization factory for CME futures strategies. It targets AWS deployment with distributed coordination via PostgreSQL, enabling long-horizon parameter optimization across many workers. The architecture focuses on backtest-to-live consistency, error handling, memory management, and distributed coordination.
 
