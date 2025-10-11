@@ -1,0 +1,43 @@
+# ----- Python / tooling -----
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/
+.venv/
+venv/
+env/
+ENV/
+
+# ----- Editors / OS -----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ----- Logs & outputs -----
+*.log
+logs/
+results/
+tear_sheets/
+*.db
+
+# Project subfolder outputs (path contains spaces)
+TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/logs/
+TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/results/
+TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/tear_sheets/
+TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/**/__pycache__/
+TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/deployed_strategies/*.py
+
+# Notebooks
+.ipynb_checkpoints/

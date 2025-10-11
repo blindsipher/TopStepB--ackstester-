@@ -1,0 +1,16 @@
+# Core dependencies for Backtestester / TopStepB pipeline
+# Install with: pip install -r requirements.txt
+
+numpy>=1.23
+pandas>=2.1
+optuna>=3.4
+psutil>=5.9
+pyarrow>=12
+matplotlib>=3.7
+quantstats>=0.0.62
+
+# PostgreSQL driver (used when Optuna storage is set to PostgreSQL)
+psycopg2-binary>=2.9
+
+# Optional: test tooling (uncomment to install dev tools)
+# pytest>=7.4
