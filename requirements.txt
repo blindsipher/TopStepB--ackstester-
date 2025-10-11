@@ -12,5 +12,12 @@ quantstats>=0.0.62
 # PostgreSQL driver (used when Optuna storage is set to PostgreSQL)
 psycopg2-binary>=2.9
 
+# UI dependencies for Streamlit interface
+streamlit>=1.28.0
+plotly>=5.17.0
+streamlit-aggrid>=0.3.4
+streamlit-option-menu>=0.3.6
+pyyaml>=6.0
+
 # Optional: test tooling (uncomment to install dev tools)
 # pytest>=7.4

@@ -81,6 +81,33 @@ Notes
 
 ## Quick Start
 
+### Option 1: Streamlit UI (Recommended)
+
+**Windows Launch:**
+```cmd
+scripts\run_ui.bat
+```
+
+**Manual Launch:**
+```cmd
+python -m streamlit run src/ui/app.py
+```
+
+**Access:**
+- URL: http://localhost:8501
+- Auto-opens in default browser
+
+The Streamlit UI provides:
+- Visual configuration interface
+- File upload and synthetic data generation
+- Real-time optimization monitoring
+- Interactive results visualization
+- Study history and management
+
+See the comprehensive user guide: `docs/UI_USER_GUIDE.md`
+
+### Option 2: Command Line Interface
+
 Example local run
 ```
 python "TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/main_runner.py" \
@@ -95,6 +122,8 @@ scp topstepb-cloud.tar.gz user@aws-instance:/opt/
 python3 main_runner.py --strategy bollinger_squeeze \
   --symbol ES --timeframe 20m --max-trials 10000 --max-workers 50
 ```
+
+**Note**: Both UI and CLI can be used interchangeably and share the same PostgreSQL database for results.
 
 ---
 
@@ -114,6 +143,14 @@ python3 "TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/main_runner.py" --strate
 
 ## Version History (summary)
 
+4.1 – Streamlit UI Release
+- Complete Streamlit-based user interface
+- 5-phase UI: Configuration, Data Loading, Monitoring, Results, History
+- Real-time optimization monitoring with auto-refresh
+- Interactive Plotly visualizations
+- Configuration templates and export functionality
+- Full CLI backward compatibility
+
 4.0 – Cloud Production Ready
 - All 7 phases implemented and tested
 - Backtest-to-live execution alignment
@@ -125,4 +162,14 @@ python3 "TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/main_runner.py" --strate
 
 ---
 
-For flow details, see `PROGRAM_FLOW_ANALYSIS.md`.
+## Documentation
+
+- **User Interface Guide**: `docs/UI_USER_GUIDE.md` - Complete UI usage instructions
+- **Program Flow Analysis**: `PROGRAM_FLOW_ANALYSIS.md` - System architecture and flow
+- **PostgreSQL Setup**: `README-POSTGRESQL.md` - Database configuration
+- **Quick Start**: `README-QUICKSTART.md` - Getting started guide
+- **Strategy Development**: `docs/STRATEGY_DEVELOPMENT_GUIDE.md` - Creating new strategies
+
+---
+
+For technical flow details, see `PROGRAM_FLOW_ANALYSIS.md`.
