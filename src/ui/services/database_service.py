@@ -8,10 +8,6 @@ import pandas as pd
 from typing import Dict, List, Optional, Any
 import sys
 from pathlib import Path
-import warnings
-
-# Suppress pandas SQLAlchemy warnings (we're using psycopg2 directly)
-warnings.filterwarnings('ignore', message='.*SQLAlchemy connectable.*')
 
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -229,24 +225,18 @@ class DatabaseService:
             print(f"Error getting trial parameters: {e}")
             return {}
 
-    def get_trial_metrics(self, trial_id: int) -> Dict[str, Any]:
-        """
-        Get all performance metrics for a specific trial
-
-        Args:
-            trial_id: ID of the trial
-
-        Returns:
-            Dictionary of metric_name: value pairs
-        """
+    def get_trial_metrics(self, study_name: str, trial_number: int) -> Dict[str, Any]:
+        """Get all performance metrics for a specific trial"""
         try:
             conn = self.get_connection()
             query = """
                 SELECT key, value_json
                 FROM trial_user_attributes
-                WHERE trial_id = %s AND key LIKE 'metric_%%'
+                JOIN trials t ON trial_user_attributes.trial_id = t.trial_id
+                JOIN studies s ON t.study_id = s.study_id
+                WHERE s.study_name = %s AND t.number = %s AND key LIKE 'metric_%%'
             """
-            df = pd.read_sql_query(query, conn, params=(trial_id,))
+            df = pd.read_sql_query(query, conn, params=(study_name, trial_number))
             self.return_connection(conn)
 
             import json
@@ -256,7 +246,7 @@ class DatabaseService:
                 value_json = row['value_json']
                 metric_name = key.replace('metric_', '')
 
-                # Skip the aggregated statistics (_mean, _std, _min, _max)
+                # Skip aggregated statistics (_mean, _std, _min, _max)
                 if any(suffix in metric_name for suffix in ['_mean', '_std', '_min', '_max']):
                     continue
 
@@ -264,41 +254,13 @@ class DatabaseService:
                 try:
                     metrics[metric_name] = json.loads(value_json)
                 except:
-                    # If not JSON, use raw value
                     metrics[metric_name] = value_json
 
-            # Map database metric names to UI expected names
-            if 'total_trades' in metrics:
-                metrics['num_trades'] = metrics['total_trades']
-
             return metrics
+
         except Exception as e:
             print(f"Error getting trial metrics: {e}")
-            import traceback
-            traceback.print_exc()
             return {}
-
-    def get_best_trial_with_metrics(self, study_name: str) -> Optional[Dict[str, Any]]:
-        """
-        Get best trial including its performance metrics
-
-        Args:
-            study_name: Name of the study
-
-        Returns:
-            Dictionary with trial info and metrics
-        """
-        best_trial = self.get_best_trial(study_name)
-        if not best_trial:
-            return None
-
-        # best_trial already contains trial_id from get_best_trial()
-        trial_id = best_trial.get('trial_id')
-        if trial_id:
-            metrics = self.get_trial_metrics(trial_id)
-            best_trial['metrics'] = metrics
-
-        return best_trial
 
     def __del__(self):
         """Clean up connection pool"""
