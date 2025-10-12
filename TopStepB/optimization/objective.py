@@ -892,6 +892,15 @@ class StatefulObjective:
                 aggregated['total_return'] = (aggregated['total_dollar_pnl'] / starting_equity) * 100
                 aggregated['pnl'] = aggregated['total_return']
 
+            # STEP 5: Aggregate trade statistics across splits (OPTIONAL - fail gracefully)
+            try:
+                from .trade_statistics import aggregate_trade_statistics
+                trade_stats = aggregate_trade_statistics(split_results)
+                aggregated.update(trade_stats)
+            except Exception as e:
+                self._logger.debug(f"Trade statistics aggregation skipped: {e}")
+                # Continue without aggregated trade statistics
+
             return aggregated
 
         except Exception as e:
@@ -1169,8 +1178,23 @@ class StatefulObjective:
                     'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
                     'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
                     'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'dollar_pnl_for_optimization': total_dollar_pnl,  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'total_bars': len(data),  # For trade statistics calculation
+                    'individual_trades': trade_dollar_pnls  # For walk-forward aggregation
                 }
+
+                # Add individual trade statistics (OPTIONAL - fail gracefully)
+                try:
+                    from .trade_statistics import calculate_trade_statistics
+                    trade_stats = calculate_trade_statistics(
+                        trade_dollar_pnls,
+                        trades,
+                        len(data)
+                    )
+                    metrics.update(trade_stats)
+                except Exception as e:
+                    self._logger.debug(f"Trade statistics calculation skipped: {e}")
+                    # Continue without trade statistics - existing metrics still work
             else:
                 metrics = self._get_zero_trade_metrics()
             
@@ -2160,8 +2184,23 @@ class ObjectiveFactory:
                     'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
                     'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
                     'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'dollar_pnl_for_optimization': total_dollar_pnl,  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'total_bars': len(data),  # For trade statistics calculation
+                    'individual_trades': trade_dollar_pnls  # For walk-forward aggregation
                 }
+
+                # Add individual trade statistics (OPTIONAL - fail gracefully)
+                try:
+                    from .trade_statistics import calculate_trade_statistics
+                    trade_stats = calculate_trade_statistics(
+                        trade_dollar_pnls,
+                        trades,
+                        len(data)
+                    )
+                    metrics.update(trade_stats)
+                except Exception as e:
+                    self._logger.debug(f"Trade statistics calculation skipped: {e}")
+                    # Continue without trade statistics - existing metrics still work
             else:
                 metrics = self._get_zero_trade_metrics()
             
@@ -2459,6 +2498,15 @@ class ObjectiveFactory:
                 starting_equity = 50000.0
                 aggregated['total_return'] = (aggregated['total_dollar_pnl'] / starting_equity) * 100
                 aggregated['pnl'] = aggregated['total_return']
+
+            # STEP 5: Aggregate trade statistics across splits (OPTIONAL - fail gracefully)
+            try:
+                from .trade_statistics import aggregate_trade_statistics
+                trade_stats = aggregate_trade_statistics(split_results)
+                aggregated.update(trade_stats)
+            except Exception as e:
+                self._logger.debug(f"Trade statistics aggregation skipped: {e}")
+                # Continue without aggregated trade statistics
 
             return aggregated
 
