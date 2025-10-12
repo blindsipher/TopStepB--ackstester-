@@ -244,26 +244,38 @@ class DatabaseService:
             query = """
                 SELECT key, value_json
                 FROM trial_user_attributes
-                WHERE trial_id = %s AND key LIKE 'metric_%'
+                WHERE trial_id = %s AND key LIKE 'metric_%%'
             """
-            cur = conn.cursor()
-            cur.execute(query, (trial_id,))
-            results = cur.fetchall()
-            cur.close()
+            df = pd.read_sql_query(query, conn, params=(trial_id,))
             self.return_connection(conn)
 
             import json
             metrics = {}
-            for key, value_json in results:
+            for _, row in df.iterrows():
+                key = row['key']
+                value_json = row['value_json']
                 metric_name = key.replace('metric_', '')
+
+                # Skip the aggregated statistics (_mean, _std, _min, _max)
+                if any(suffix in metric_name for suffix in ['_mean', '_std', '_min', '_max']):
+                    continue
+
+                # Parse JSON value
                 try:
                     metrics[metric_name] = json.loads(value_json)
                 except:
+                    # If not JSON, use raw value
                     metrics[metric_name] = value_json
+
+            # Map database metric names to UI expected names
+            if 'total_trades' in metrics:
+                metrics['num_trades'] = metrics['total_trades']
 
             return metrics
         except Exception as e:
             print(f"Error getting trial metrics: {e}")
+            import traceback
+            traceback.print_exc()
             return {}
 
     def get_best_trial_with_metrics(self, study_name: str) -> Optional[Dict[str, Any]]:
@@ -280,22 +292,9 @@ class DatabaseService:
         if not best_trial:
             return None
 
-        # Get trial_id from the best trial
-        conn = self.get_connection()
-        query = """
-            SELECT t.trial_id
-            FROM trials t
-            JOIN studies s ON t.study_id = s.study_id
-            WHERE s.study_name = %s AND t.number = %s
-        """
-        cur = conn.cursor()
-        cur.execute(query, (study_name, best_trial['number']))
-        result = cur.fetchone()
-        cur.close()
-        self.return_connection(conn)
-
-        if result:
-            trial_id = result[0]
+        # best_trial already contains trial_id from get_best_trial()
+        trial_id = best_trial.get('trial_id')
+        if trial_id:
             metrics = self.get_trial_metrics(trial_id)
             best_trial['metrics'] = metrics
 
