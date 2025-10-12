@@ -9,9 +9,11 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import sys
 
-# Add project root to path
+# Add project root and TopStepB to path
 project_root = Path(__file__).parent.parent.parent
+topstepb_dir = project_root / "TopStepB"
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(topstepb_dir))
 
 from TopStepB.config.system_config import get_market_spec, configure_for_account
 from TopStepB.data.data_loader import DataLoader

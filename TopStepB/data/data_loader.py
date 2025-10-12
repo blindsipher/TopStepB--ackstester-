@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from TopStepB.utils.timezone_utils import ensure_datetime_column
+from utils.timezone_utils import ensure_datetime_column
 
 # ARCHITECTURAL FIX: Remove constants.py dependency - define constants locally
 DATA_EXTENSIONS = {'.csv', '.parquet'}  # Supported data file extensions
