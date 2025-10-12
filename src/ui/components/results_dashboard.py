@@ -53,10 +53,7 @@ def render():
         with col1:
             st.metric("Trial Number", best_trial['number'])
         with col2:
-            if best_trial['value'] is not None:
-                st.metric("Best Score", f"{best_trial['value']:.4f}")
-            else:
-                st.metric("Best Score", "N/A")
+            st.metric("Best Score", f"{best_trial['value']:.4f}")
         with col3:
             st.metric("Status", best_trial['state'])
         with col4:

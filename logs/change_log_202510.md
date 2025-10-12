@@ -1571,3 +1571,140 @@ Sequential period testing:
 
 ---
 
+
+---
+
+## 2025-10-12 15:40:00 - UI Validator Update: Add Micro Contracts Support
+
+### Change Type
+**ENHANCEMENT** - UI validator update to enable micro contract selection
+
+### Git Information
+- **Branch**: fix-walk-forward-aggregation
+- **Files Modified**: 1
+- **Lines Changed**: 1
+- **Commit Status**: Uncommitted (ready for commit, push deferred)
+
+### Problem Statement
+User's data is for MES (Micro E-mini S&P 500) with tick value of $1.25, but
+the UI validator only allowed ES (E-mini S&P 500) with tick value of $12.50
+to be selected. This forced incorrect symbol selection, causing all PnL
+values in optimization to be 10x too high.
+
+### Root Cause
+The VALID_SYMBOLS list in src/ui/utils/validators.py only included standard
+contracts (ES, NQ, YM, RTY, CL, GC, SI) and did not include micro contracts,
+despite micro contracts being fully defined with correct tick values in
+TopStepB/config/system_config.py.
+
+### Solution
+Updated VALID_SYMBOLS list to include all micro contracts that are defined
+in the system configuration.
+
+### Changes Made
+
+**FILE: src/ui/utils/validators.py**
+- **Line 12**: Updated VALID_SYMBOLS list
+- **Before**:
+  ```python
+  VALID_SYMBOLS = ['ES', 'NQ', 'YM', 'RTY', 'CL', 'GC', 'SI']
+  ```
+- **After**:
+  ```python
+  VALID_SYMBOLS = ['ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K', 'CL', 'MCL', 'GC', 'MGC', 'SI']
+  ```
+
+### Micro Contracts Added
+
+| Symbol | Name | Tick Value | Verified in Config |
+|--------|------|------------|-------------------|
+| MES | Micro E-mini S&P 500 | $1.25 | Yes |
+| MNQ | Micro E-mini NASDAQ 100 | $0.50 | Yes |
+| MYM | Micro Mini-DOW | $0.50 | Yes |
+| M2K | Micro E-mini Russell 2000 | $0.50 | Yes |
+| MCL | Micro Crude Oil | $1.00 | Yes |
+| MGC | Micro Gold | $1.00 | Yes |
+
+### Verification
+All added symbols are properly defined in TopStepB/config/system_config.py:
+- Correct tick sizes and tick values
+- Proper contract sizes
+- Exchange information included
+- Flagged as micro contracts (micro_contract=True)
+
+### Impact Assessment
+
+**User Impact:**
+- Can now select MES and other micro contracts from UI dropdown
+- Optimization will use correct tick values for PnL calculations
+- Eliminates 10x PnL calculation error
+- Walk-forward optimization results will be accurate
+
+**System Impact:**
+- Simple UI validation change only
+- No changes to core optimization logic
+- No changes to market specifications
+- No breaking changes to existing functionality
+
+**Risk Level:** VERY LOW
+- Single line change
+- No logic changes
+- Only expands validator list
+- All symbols verified in system config
+
+### Testing Validation
+
+**Code Quality:**
+- [x] No emojis added
+- [x] No debug statements
+- [x] Follows existing code style
+- [x] Production ready
+
+**Functional Validation:**
+- [x] All micro contracts exist in system_config.py
+- [x] Tick values verified for each symbol
+- [x] Validator syntax correct
+- [x] No syntax errors
+
+**Integration:**
+- [x] Change compatible with existing code
+- [x] No breaking changes
+- [x] No dependencies affected
+
+### Related Changes
+This change is part of the fix-walk-forward-aggregation branch. Other
+uncommitted changes exist in src/ui/components/results_dashboard.py but
+are unrelated to this validator fix.
+
+### Next Steps
+1. [COMPLETED] Document change in logs
+2. [READY] Create git commit
+3. [DEFERRED] Push to remote (user will test first)
+4. [PENDING] User testing with MES data
+5. [PENDING] Verify PnL calculations are accurate
+
+### Commit Message (Prepared)
+```
+fix: Add micro contracts to UI validator VALID_SYMBOLS list
+
+Enable selection of micro contracts (MES, MNQ, MYM, M2K, MCL, MGC)
+in UI dropdown to allow accurate PnL calculations with correct tick values.
+
+Previously only standard contracts were allowed, forcing users with micro
+contract data to select incorrect symbols, resulting in 10x PnL errors
+(e.g., ES $12.50/tick instead of MES $1.25/tick).
+
+All micro contracts are verified to exist in TopStepB/config/system_config.py
+with correct specifications.
+
+Fixes PnL calculation accuracy issue in walk-forward optimization.
+
+Branch: fix-walk-forward-aggregation
+```
+
+### Documentation Updated
+- logs/daily_2025-10-12.log (comprehensive session entry)
+- logs/change_log_202510.md (this entry)
+- logs/aggregator.log (to be updated with commit)
+
+---

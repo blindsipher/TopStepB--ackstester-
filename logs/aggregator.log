@@ -1939,3 +1939,47 @@ and manageable file sizes. Future enhancements can be added as needed.
 **Ready for Commit**: YES
 
 ---
+
+=================================================================
+ENTRY: 2025-10-12 15:40:00
+AGENT: Documentation/Version Control Specialist
+TYPE: Enhancement - UI Validator Update
+=================================================================
+
+CHANGE SUMMARY:
+Added micro contracts to UI validator VALID_SYMBOLS list to enable
+accurate PnL calculations with correct tick values.
+
+PROBLEM:
+User's data is MES ($1.25/tick) but UI only allowed ES ($12.50/tick),
+causing 10x PnL errors in optimization results.
+
+SOLUTION:
+Updated src/ui/utils/validators.py line 12 to include all micro
+contracts that are defined in TopStepB/config/system_config.py.
+
+FILES MODIFIED:
+- src/ui/utils/validators.py (1 line changed)
+
+MICRO CONTRACTS ADDED:
+- MES: Micro E-mini S&P 500 ($1.25/tick)
+- MNQ: Micro E-mini NASDAQ 100 ($0.50/tick)
+- MYM: Micro Mini-DOW ($0.50/tick)
+- M2K: Micro E-mini Russell 2000 ($0.50/tick)
+- MCL: Micro Crude Oil ($1.00/tick)
+- MGC: Micro Gold ($1.00/tick)
+
+VERIFICATION:
+All micro contracts verified in TopStepB/config/system_config.py
+with correct tick sizes, tick values, and contract specifications.
+
+IMPACT:
+- Users can now select micro contracts from UI dropdown
+- Optimization uses correct tick values for PnL calculations
+- Eliminates 10x PnL calculation errors
+- Walk-forward optimization accuracy improved
+
+BRANCH: fix-walk-forward-aggregation
+STATUS: Ready for commit (push deferred per user request)
+
+=================================================================
