@@ -256,6 +256,12 @@ class DatabaseService:
                 except:
                     metrics[metric_name] = value_json
 
+            # Map metric names for UI compatibility
+            if 'total_trades' in metrics:
+                metrics['num_trades'] = metrics['total_trades']
+            if 'total_dollar_pnl' in metrics:
+                metrics['total_pnl'] = metrics['total_dollar_pnl']
+
             return metrics
 
         except Exception as e:
