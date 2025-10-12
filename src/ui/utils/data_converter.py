@@ -166,7 +166,7 @@ if __name__ == "__main__":
     OUTPUT_DIR = r"C:\Users\salte\ClaudeProjects\TopStepB--ackstester-\data\converted"
 
     # Timeframes to generate
-    TIMEFRAMES = ['20T', '1H', '4H', '1D']
+    TIMEFRAMES = ['1T', '20T', '1H', '4H', '1D']  # Added 1-minute for maximum accuracy
 
     # For initial testing, limit rows (remove for full conversion)
     MAX_ROWS = None  # Set to 100000 for testing, None for full conversion
