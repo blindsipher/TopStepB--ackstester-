@@ -277,3 +277,58 @@ def render():
         with col2:
             for k, v in items[mid:]:
                 st.write(f"**{k}:** {v}")
+
+        # Export parameters for OOS testing
+        st.markdown("---")
+        st.subheader("Out-of-Sample Testing")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("📥 Export Parameters", help="Export winning parameters to JSON file for OOS backtesting"):
+                try:
+                    from TopStepB.validation.oos_backtest import OOSBacktester
+                    from pathlib import Path
+                    import pandas as pd
+
+                    backtester = OOSBacktester()
+
+                    # Create export filename
+                    timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"trial_{best_trial['number']}_params_{timestamp}.json"
+                    output_path = Path("oos_parameters") / filename
+
+                    success = backtester.export_trial_parameters(
+                        selected_study,
+                        best_trial['number'],
+                        str(output_path),
+                        include_metrics=True
+                    )
+
+                    if success:
+                        st.success(f"✓ Exported to: {output_path}")
+                        st.info("""
+                        **Next steps:**
+                        1. Place your OOS data file in the `data/` directory
+                        2. Run OOS backtest from command line:
+                        ```
+                        python TopStepB/validation/oos_backtest.py \\
+                            --params {params_file} \\
+                            --data {oos_data_file} \\
+                            --strategy bollinger_squeeze \\
+                            --symbol ES \\
+                            --output oos_results.json
+                        ```
+                        """)
+                    else:
+                        st.error("Failed to export parameters")
+
+                except Exception as e:
+                    st.error(f"Export failed: {e}")
+
+        with col2:
+            st.write("**About OOS Testing:**")
+            st.write("Out-of-sample testing validates your strategy on fresh data it hasn't seen during optimization.")
+            st.write("• Prevents overfitting")
+            st.write("• Tests real-world performance")
+            st.write("• Provides confidence in live trading")
