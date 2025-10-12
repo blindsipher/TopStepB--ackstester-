@@ -676,16 +676,65 @@ class StatefulObjective:
         )
         
         return composite_score
-    
+
+    def _validate_equity_curve(self, curve: Any) -> Optional[List[float]]:
+        """
+        Validate and sanitize equity curve data.
+
+        Args:
+            curve: Potential equity curve (could be None, list, array, or malformed)
+
+        Returns:
+            Validated list of floats, or None if validation fails
+        """
+        if curve is None:
+            return None
+
+        try:
+            # Convert to list if it's a numpy array
+            if hasattr(curve, 'tolist'):
+                curve = curve.tolist()
+
+            # Ensure it's a list or tuple
+            if not isinstance(curve, (list, tuple)):
+                return None
+
+            # Must have at least 1 point
+            if len(curve) == 0:
+                return None
+
+            # Validate all values are numeric and finite
+            validated = []
+            for val in curve:
+                # Handle numpy scalars
+                if hasattr(val, 'item'):
+                    val = val.item()
+
+                # Convert to float
+                try:
+                    float_val = float(val)
+                    # Check for NaN or Inf
+                    if not np.isfinite(float_val):
+                        return None
+                    validated.append(float_val)
+                except (ValueError, TypeError):
+                    return None
+
+            return validated
+
+        except Exception:
+            # Any unexpected error -> treat as invalid
+            return None
+
     def _aggregate_split_metrics(self, split_results: List[Dict[str, float]]) -> Dict[str, float]:
         """
         Aggregate metrics across walk-forward splits using appropriate methods.
 
-        CRITICAL FIX: Use correct aggregation for walk-forward testing:
+        FIXED: Use correct aggregation for walk-forward testing:
         - SUM for cumulative metrics (PnL, trades, costs, bars)
-        - MAX for worst-case metrics (drawdown)
+        - MEDIAN for ratio metrics (win_rate, sharpe, profit_factor)
         - Concatenate equity curves for true cumulative performance
-        - Recalculate ratios from aggregated data
+        - Calculate max_drawdown from complete concatenated curve
 
         Args:
             split_results: List of metric dictionaries from each split
@@ -693,141 +742,169 @@ class StatefulObjective:
         Returns:
             Aggregated metrics dictionary
         """
-        aggregated = {}
+        try:
+            aggregated = {}
 
-        # Get all unique metric names
-        all_metrics = set()
-        for result in split_results:
-            all_metrics.update(result.keys())
-
-        # CRITICAL FIX: Concatenate equity curves to get true walk-forward performance
-        if 'equity_curve' in all_metrics:
-            all_equity_curves = []
+            # Get all unique metric names
+            all_metrics = set()
             for result in split_results:
-                if 'equity_curve' in result:
-                    all_equity_curves.append(result['equity_curve'])
+                all_metrics.update(result.keys())
 
-            if all_equity_curves:
-                # Concatenate equity curves, adjusting each split to continue from previous ending
-                concatenated_curve = []
-                cumulative_offset = 0.0
-                starting_equity = 50000.0  # Standard starting equity
+            # Define metric categories for proper aggregation
+            cumulative_metrics = {
+                'total_trades', 'total_bars', 'commission_cost',
+                'slippage_cost', 'net_profit'
+            }
+            ratio_metrics = {
+                'win_rate', 'sharpe_ratio', 'sortino_ratio',
+                'profit_factor', 'calmar_ratio', 'expectancy',
+                'trades_per_day'
+            }
 
-                for i, curve in enumerate(all_equity_curves):
-                    if i == 0:
-                        # First split: use as-is
-                        concatenated_curve.extend(curve)
-                        # Calculate offset for next split
-                        cumulative_offset = curve[-1] - starting_equity
+            # STEP 1: Handle equity curve concatenation with validation
+            if 'equity_curve' in all_metrics:
+                try:
+                    valid_curves = []
+                    for result in split_results:
+                        if 'equity_curve' in result:
+                            validated = self._validate_equity_curve(result['equity_curve'])
+                            if validated:
+                                valid_curves.append(validated)
+
+                    if len(valid_curves) >= 2:
+                        # Concatenate multiple curves
+                        concatenated_curve = []
+                        for i, curve in enumerate(valid_curves):
+                            if i == 0:
+                                # First split: use as-is
+                                concatenated_curve.extend(curve)
+                            else:
+                                # Subsequent splits: adjust to continue from previous ending
+                                previous_ending = concatenated_curve[-1]
+                                adjusted_curve = [previous_ending + (val - curve[0]) for val in curve]
+                                concatenated_curve.extend(adjusted_curve[1:])  # Skip first to avoid duplicate
+
+                        aggregated['equity_curve'] = concatenated_curve
+
+                        # Calculate true cumulative PnL from concatenated curve
+                        true_total_pnl = concatenated_curve[-1] - concatenated_curve[0]
+                        aggregated['total_dollar_pnl'] = float(true_total_pnl)
+                        aggregated['dollar_pnl_for_optimization'] = float(true_total_pnl)
+
+                        # Calculate true max drawdown from concatenated curve
+                        peak = concatenated_curve[0]
+                        max_dd_dollars = 0.0
+                        for equity in concatenated_curve:
+                            if equity > peak:
+                                peak = equity
+                            drawdown = peak - equity
+                            if drawdown > max_dd_dollars:
+                                max_dd_dollars = drawdown
+
+                        max_dd_percent = (max_dd_dollars / peak * 100) if peak > 0 else 0.0
+                        aggregated['max_drawdown'] = float(max_dd_percent)
+                        aggregated['max_drawdown_dollars'] = float(max_dd_dollars)
+
+                    elif len(valid_curves) == 1:
+                        # Only one valid curve - use it directly
+                        aggregated['equity_curve'] = valid_curves[0]
+                        aggregated['total_dollar_pnl'] = float(valid_curves[0][-1] - valid_curves[0][0])
+                        aggregated['dollar_pnl_for_optimization'] = aggregated['total_dollar_pnl']
+
+                    # Remove equity_curve from further processing
+                    all_metrics.discard('equity_curve')
+                    # Also remove metrics we just calculated
+                    all_metrics.discard('total_dollar_pnl')
+                    all_metrics.discard('dollar_pnl_for_optimization')
+                    all_metrics.discard('max_drawdown')
+                    all_metrics.discard('max_drawdown_dollars')
+
+                except Exception as e:
+                    # If concatenation fails, fall back to first split's curve
+                    self._logger.warning(f"Equity curve concatenation failed: {e}, using fallback")
+                    for result in split_results:
+                        if 'equity_curve' in result:
+                            aggregated['equity_curve'] = result['equity_curve']
+                            break
+                    all_metrics.discard('equity_curve')
+
+            # STEP 2: Concatenate daily PnL series
+            if 'daily_pnl_series' in all_metrics:
+                try:
+                    all_daily_pnl = []
+                    for result in split_results:
+                        if 'daily_pnl_series' in result:
+                            series = result['daily_pnl_series']
+                            if isinstance(series, (list, tuple)):
+                                all_daily_pnl.extend(series)
+                    if all_daily_pnl:
+                        aggregated['daily_pnl_series'] = all_daily_pnl
+                except Exception:
+                    pass  # Not critical
+                all_metrics.discard('daily_pnl_series')
+
+            # STEP 3: Aggregate remaining scalar metrics
+            for metric_name in all_metrics:
+                values = []
+                for result in split_results:
+                    if metric_name in result:
+                        metric_value = result[metric_name]
+                        # Ensure scalar extraction
+                        if hasattr(metric_value, 'item'):
+                            metric_value = metric_value.item()
+                        elif isinstance(metric_value, (list, tuple)):
+                            metric_value = float(metric_value[0]) if metric_value else 0.0
+                        elif not np.isscalar(metric_value):
+                            metric_value = float(metric_value)
+
+                        if not np.isnan(metric_value):
+                            values.append(metric_value)
+
+                if values:
+                    # Use appropriate aggregation method
+                    if metric_name in cumulative_metrics:
+                        # SUM for cumulative metrics
+                        aggregated[metric_name] = float(np.sum(values))
+                    elif metric_name in ratio_metrics:
+                        # MEDIAN for ratio metrics
+                        aggregated[metric_name] = float(np.median(values))
                     else:
-                        # Subsequent splits: adjust to continue from previous ending
-                        # The split curve starts at starting_equity, we need to shift it
-                        split_pnl_change = curve[-1] - curve[0]  # PnL change in this split
-                        previous_ending = concatenated_curve[-1]
+                        # Default to MEDIAN for unknown metrics
+                        aggregated[metric_name] = float(np.median(values))
 
-                        # Adjust entire curve to start where previous ended
-                        adjusted_curve = [previous_ending + (val - curve[0]) for val in curve]
-                        concatenated_curve.extend(adjusted_curve[1:])  # Skip first point to avoid duplicate
-
-                aggregated['equity_curve'] = concatenated_curve
-
-                # Calculate true cumulative PnL from concatenated equity curve
-                true_total_pnl = concatenated_curve[-1] - concatenated_curve[0]
-                aggregated['total_dollar_pnl'] = float(true_total_pnl)
-                aggregated['dollar_pnl_for_optimization'] = float(true_total_pnl)
-
-                # Calculate true max drawdown from concatenated curve
-                peak = concatenated_curve[0]
-                max_dd_dollars = 0.0
-                for equity in concatenated_curve:
-                    if equity > peak:
-                        peak = equity
-                    drawdown = peak - equity
-                    if drawdown > max_dd_dollars:
-                        max_dd_dollars = drawdown
-
-                max_dd_percent = (max_dd_dollars / peak * 100) if peak > 0 else 0.0
-                aggregated['max_drawdown'] = float(max_dd_percent)
-                aggregated['max_drawdown_dollars'] = float(max_dd_dollars)
-
-            all_metrics.remove('equity_curve')
-            # CRITICAL FIX: Remove these metrics so they don't get overwritten by the general aggregation loop
-            all_metrics.discard('total_dollar_pnl')
-            all_metrics.discard('dollar_pnl_for_optimization')
-            all_metrics.discard('max_drawdown')
-            all_metrics.discard('max_drawdown_dollars')
-
-        # CRITICAL FIX: Concatenate daily PnL series
-        if 'daily_pnl_series' in all_metrics:
-            all_daily_pnl = []
-            for result in split_results:
-                if 'daily_pnl_series' in result:
-                    all_daily_pnl.extend(result['daily_pnl_series'])
-            if all_daily_pnl:
-                aggregated['daily_pnl_series'] = all_daily_pnl
-            all_metrics.remove('daily_pnl_series')
-
-        # Define which metrics should be SUMMED (cumulative across splits)
-        sum_metrics = {
-            'total_trades', 'total_bars', 'commission_cost', 'slippage_cost',
-            'net_profit'  # Net profit is cumulative
-        }
-
-        # Define which metrics should use MAX (worst case)
-        max_metrics = set()  # max_drawdown already handled above
-
-        # Aggregate remaining scalar metrics
-        for metric_name in all_metrics:
-            values = []
-            for result in split_results:
-                if metric_name in result:
-                    metric_value = result[metric_name]
-                    # CRITICAL FIX: Ensure scalar extraction
-                    if hasattr(metric_value, 'item'):
-                        metric_value = metric_value.item()
-                    elif isinstance(metric_value, (list, tuple)):
-                        metric_value = float(metric_value[0]) if metric_value else 0.0
-                    elif not np.isscalar(metric_value):
-                        metric_value = float(metric_value)
-
-                    if not np.isnan(metric_value):
-                        values.append(metric_value)
-
-            if values:
-                # CRITICAL FIX: Use appropriate aggregation method
-                if metric_name in sum_metrics:
-                    # SUM for cumulative metrics
-                    aggregated[metric_name] = float(np.sum(values))
-                elif metric_name in max_metrics:
-                    # MAX for worst-case metrics
-                    aggregated[metric_name] = float(np.max(values))
+                    # Store additional statistics
+                    aggregated[f"{metric_name}_mean"] = float(np.mean(values))
+                    aggregated[f"{metric_name}_std"] = float(np.std(values))
+                    aggregated[f"{metric_name}_min"] = float(np.min(values))
+                    aggregated[f"{metric_name}_max"] = float(np.max(values))
                 else:
-                    # MEDIAN for ratio/statistical metrics (win_rate, sharpe, etc.)
-                    # These represent typical performance, not cumulative
-                    aggregated[metric_name] = float(np.median(values))
+                    # Handle missing values
+                    default_values = {
+                        'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'pnl': 0.0,
+                        'max_drawdown': 100.0, 'profit_factor': 1.0, 'win_rate': 0.0,
+                        'total_trades': 0, 'total_bars': 1000
+                    }
+                    aggregated[metric_name] = default_values.get(metric_name, 0.0)
 
-                # Store additional statistics for analysis
-                aggregated[f"{metric_name}_mean"] = float(np.mean(values))
-                aggregated[f"{metric_name}_std"] = float(np.std(values))
-                aggregated[f"{metric_name}_min"] = float(np.min(values))
-                aggregated[f"{metric_name}_max"] = float(np.max(values))
-            else:
-                # Handle missing values
-                default_values = {
-                    'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'pnl': 0.0,
-                    'max_drawdown': 100.0, 'profit_factor': 1.0, 'win_rate': 0.0,
-                    'total_trades': 0, 'total_bars': 1000
-                }
-                aggregated[metric_name] = default_values.get(metric_name, 0.0)
+            # STEP 4: Recalculate derived metrics if we have total_dollar_pnl
+            if 'total_dollar_pnl' in aggregated:
+                starting_equity = 50000.0
+                aggregated['total_return'] = (aggregated['total_dollar_pnl'] / starting_equity) * 100
+                aggregated['pnl'] = aggregated['total_return']
 
-        # CRITICAL FIX: Recalculate total_return percentage from true PnL
-        if 'total_dollar_pnl' in aggregated:
-            starting_equity = 50000.0
-            aggregated['total_return'] = (aggregated['total_dollar_pnl'] / starting_equity) * 100
-            aggregated['pnl'] = aggregated['total_return']  # Legacy compatibility
+            return aggregated
 
-        return aggregated
-    
+        except Exception as e:
+            # Critical: If aggregation completely fails, return safe defaults
+            self._logger.error(f"Aggregation failed catastrophically: {e}, returning safe defaults")
+            return {
+                'total_dollar_pnl': 0.0,
+                'total_trades': 0,
+                'sharpe_ratio': 0.0,
+                'pnl': 0.0,
+                'equity_curve': [50000.0]
+            }
+
     def _cleanup_trial_memory(self, local_vars: Dict[str, Any]) -> None:
         """
         Centralized cleanup of trial memory to prevent accumulation.
@@ -1074,46 +1151,7 @@ class StatefulObjective:
                 # If no trades, create minimal daily series to prevent errors
                 if not daily_pnl_series:
                     daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
-
-                # Calculate detailed trade statistics
-                avg_win = np.mean(winning_dollar_pnls) if winning_dollar_pnls else 0.0
-                avg_loss = np.mean(losing_dollar_pnls) if losing_dollar_pnls else 0.0
-                best_trade = max(trade_dollar_pnls) if trade_dollar_pnls else 0.0
-                worst_trade = min(trade_dollar_pnls) if trade_dollar_pnls else 0.0
-
-                # Calculate consecutive wins/losses
-                max_consecutive_wins = 0
-                max_consecutive_losses = 0
-                current_wins = 0
-                current_losses = 0
-                for pnl in trade_dollar_pnls:
-                    if pnl > 0:
-                        current_wins += 1
-                        current_losses = 0
-                        if current_wins > max_consecutive_wins:
-                            max_consecutive_wins = current_wins
-                    else:
-                        current_losses += 1
-                        current_wins = 0
-                        if current_losses > max_consecutive_losses:
-                            max_consecutive_losses = current_losses
-
-                # Calculate trading days and dates
-                trading_days = len(sorted_dates) if sorted_dates else 1
-                date_start = str(sorted_dates[0]) if sorted_dates else ''
-                date_end = str(sorted_dates[-1]) if sorted_dates else ''
-                trades_per_day = trades / trading_days if trading_days > 0 else 0.0
-
-                # Calculate Calmar ratio (return / max drawdown)
-                calmar_ratio = 0.0
-                if max_drawdown_percentage > 0:
-                    calmar_ratio = total_return_percentage / max_drawdown_percentage
-                elif total_return_percentage > 0:
-                    calmar_ratio = 999.0  # No drawdown but positive return
-
-                # Calculate expectancy (average $ per trade)
-                expectancy = total_dollar_pnl / trades if trades > 0 else 0.0
-
+                
                 # INSTITUTIONAL COMPLIANCE: Comprehensive tick-based metrics
                 metrics = {
                     'total_return': total_return_percentage,
@@ -1131,19 +1169,7 @@ class StatefulObjective:
                     'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
                     'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
                     'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl,  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
-                    'avg_win': avg_win,
-                    'avg_loss': avg_loss,
-                    'best_trade': best_trade,
-                    'worst_trade': worst_trade,
-                    'max_consecutive_wins': max_consecutive_wins,
-                    'max_consecutive_losses': max_consecutive_losses,
-                    'trades_per_day': trades_per_day,
-                    'calmar_ratio': calmar_ratio,
-                    'expectancy': expectancy,
-                    'trading_days': trading_days,
-                    'date_start': date_start,
-                    'date_end': date_end
+                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
                 }
             else:
                 metrics = self._get_zero_trade_metrics()
@@ -2116,46 +2142,7 @@ class ObjectiveFactory:
                 # If no trades, create minimal daily series to prevent errors
                 if not daily_pnl_series:
                     daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
-
-                # Calculate detailed trade statistics
-                avg_win = np.mean(winning_dollar_pnls) if winning_dollar_pnls else 0.0
-                avg_loss = np.mean(losing_dollar_pnls) if losing_dollar_pnls else 0.0
-                best_trade = max(trade_dollar_pnls) if trade_dollar_pnls else 0.0
-                worst_trade = min(trade_dollar_pnls) if trade_dollar_pnls else 0.0
-
-                # Calculate consecutive wins/losses
-                max_consecutive_wins = 0
-                max_consecutive_losses = 0
-                current_wins = 0
-                current_losses = 0
-                for pnl in trade_dollar_pnls:
-                    if pnl > 0:
-                        current_wins += 1
-                        current_losses = 0
-                        if current_wins > max_consecutive_wins:
-                            max_consecutive_wins = current_wins
-                    else:
-                        current_losses += 1
-                        current_wins = 0
-                        if current_losses > max_consecutive_losses:
-                            max_consecutive_losses = current_losses
-
-                # Calculate trading days and dates
-                trading_days = len(sorted_dates) if sorted_dates else 1
-                date_start = str(sorted_dates[0]) if sorted_dates else ''
-                date_end = str(sorted_dates[-1]) if sorted_dates else ''
-                trades_per_day = trades / trading_days if trading_days > 0 else 0.0
-
-                # Calculate Calmar ratio (return / max drawdown)
-                calmar_ratio = 0.0
-                if max_drawdown_percentage > 0:
-                    calmar_ratio = total_return_percentage / max_drawdown_percentage
-                elif total_return_percentage > 0:
-                    calmar_ratio = 999.0  # No drawdown but positive return
-
-                # Calculate expectancy (average $ per trade)
-                expectancy = total_dollar_pnl / trades if trades > 0 else 0.0
-
+                
                 # INSTITUTIONAL COMPLIANCE: Comprehensive tick-based metrics
                 metrics = {
                     'total_return': total_return_percentage,
@@ -2173,19 +2160,7 @@ class ObjectiveFactory:
                     'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
                     'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
                     'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl,  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
-                    'avg_win': avg_win,
-                    'avg_loss': avg_loss,
-                    'best_trade': best_trade,
-                    'worst_trade': worst_trade,
-                    'max_consecutive_wins': max_consecutive_wins,
-                    'max_consecutive_losses': max_consecutive_losses,
-                    'trades_per_day': trades_per_day,
-                    'calmar_ratio': calmar_ratio,
-                    'expectancy': expectancy,
-                    'trading_days': trading_days,
-                    'date_start': date_start,
-                    'date_end': date_end
+                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
                 }
             else:
                 metrics = self._get_zero_trade_metrics()
@@ -2269,16 +2244,65 @@ class ObjectiveFactory:
             enhanced_metrics['total_bars'] = len(validate_data)
         
         return enhanced_metrics
-    
+
+    def _validate_equity_curve(self, curve: Any) -> Optional[List[float]]:
+        """
+        Validate and sanitize equity curve data.
+
+        Args:
+            curve: Potential equity curve (could be None, list, array, or malformed)
+
+        Returns:
+            Validated list of floats, or None if validation fails
+        """
+        if curve is None:
+            return None
+
+        try:
+            # Convert to list if it's a numpy array
+            if hasattr(curve, 'tolist'):
+                curve = curve.tolist()
+
+            # Ensure it's a list or tuple
+            if not isinstance(curve, (list, tuple)):
+                return None
+
+            # Must have at least 1 point
+            if len(curve) == 0:
+                return None
+
+            # Validate all values are numeric and finite
+            validated = []
+            for val in curve:
+                # Handle numpy scalars
+                if hasattr(val, 'item'):
+                    val = val.item()
+
+                # Convert to float
+                try:
+                    float_val = float(val)
+                    # Check for NaN or Inf
+                    if not np.isfinite(float_val):
+                        return None
+                    validated.append(float_val)
+                except (ValueError, TypeError):
+                    return None
+
+            return validated
+
+        except Exception:
+            # Any unexpected error -> treat as invalid
+            return None
+
     def _aggregate_split_metrics(self, split_results: List[Dict[str, float]]) -> Dict[str, float]:
         """
         Aggregate metrics across walk-forward splits using appropriate methods.
 
-        CRITICAL FIX: Use correct aggregation for walk-forward testing:
+        FIXED: Use correct aggregation for walk-forward testing:
         - SUM for cumulative metrics (PnL, trades, costs, bars)
-        - MAX for worst-case metrics (drawdown)
+        - MEDIAN for ratio metrics (win_rate, sharpe, profit_factor)
         - Concatenate equity curves for true cumulative performance
-        - Recalculate ratios from aggregated data
+        - Calculate max_drawdown from complete concatenated curve
 
         Args:
             split_results: List of metric dictionaries from each split
@@ -2286,141 +2310,169 @@ class ObjectiveFactory:
         Returns:
             Aggregated metrics dictionary
         """
-        aggregated = {}
+        try:
+            aggregated = {}
 
-        # Get all unique metric names
-        all_metrics = set()
-        for result in split_results:
-            all_metrics.update(result.keys())
-
-        # CRITICAL FIX: Concatenate equity curves to get true walk-forward performance
-        if 'equity_curve' in all_metrics:
-            all_equity_curves = []
+            # Get all unique metric names
+            all_metrics = set()
             for result in split_results:
-                if 'equity_curve' in result:
-                    all_equity_curves.append(result['equity_curve'])
+                all_metrics.update(result.keys())
 
-            if all_equity_curves:
-                # Concatenate equity curves, adjusting each split to continue from previous ending
-                concatenated_curve = []
-                cumulative_offset = 0.0
-                starting_equity = 50000.0  # Standard starting equity
+            # Define metric categories for proper aggregation
+            cumulative_metrics = {
+                'total_trades', 'total_bars', 'commission_cost',
+                'slippage_cost', 'net_profit'
+            }
+            ratio_metrics = {
+                'win_rate', 'sharpe_ratio', 'sortino_ratio',
+                'profit_factor', 'calmar_ratio', 'expectancy',
+                'trades_per_day'
+            }
 
-                for i, curve in enumerate(all_equity_curves):
-                    if i == 0:
-                        # First split: use as-is
-                        concatenated_curve.extend(curve)
-                        # Calculate offset for next split
-                        cumulative_offset = curve[-1] - starting_equity
+            # STEP 1: Handle equity curve concatenation with validation
+            if 'equity_curve' in all_metrics:
+                try:
+                    valid_curves = []
+                    for result in split_results:
+                        if 'equity_curve' in result:
+                            validated = self._validate_equity_curve(result['equity_curve'])
+                            if validated:
+                                valid_curves.append(validated)
+
+                    if len(valid_curves) >= 2:
+                        # Concatenate multiple curves
+                        concatenated_curve = []
+                        for i, curve in enumerate(valid_curves):
+                            if i == 0:
+                                # First split: use as-is
+                                concatenated_curve.extend(curve)
+                            else:
+                                # Subsequent splits: adjust to continue from previous ending
+                                previous_ending = concatenated_curve[-1]
+                                adjusted_curve = [previous_ending + (val - curve[0]) for val in curve]
+                                concatenated_curve.extend(adjusted_curve[1:])  # Skip first to avoid duplicate
+
+                        aggregated['equity_curve'] = concatenated_curve
+
+                        # Calculate true cumulative PnL from concatenated curve
+                        true_total_pnl = concatenated_curve[-1] - concatenated_curve[0]
+                        aggregated['total_dollar_pnl'] = float(true_total_pnl)
+                        aggregated['dollar_pnl_for_optimization'] = float(true_total_pnl)
+
+                        # Calculate true max drawdown from concatenated curve
+                        peak = concatenated_curve[0]
+                        max_dd_dollars = 0.0
+                        for equity in concatenated_curve:
+                            if equity > peak:
+                                peak = equity
+                            drawdown = peak - equity
+                            if drawdown > max_dd_dollars:
+                                max_dd_dollars = drawdown
+
+                        max_dd_percent = (max_dd_dollars / peak * 100) if peak > 0 else 0.0
+                        aggregated['max_drawdown'] = float(max_dd_percent)
+                        aggregated['max_drawdown_dollars'] = float(max_dd_dollars)
+
+                    elif len(valid_curves) == 1:
+                        # Only one valid curve - use it directly
+                        aggregated['equity_curve'] = valid_curves[0]
+                        aggregated['total_dollar_pnl'] = float(valid_curves[0][-1] - valid_curves[0][0])
+                        aggregated['dollar_pnl_for_optimization'] = aggregated['total_dollar_pnl']
+
+                    # Remove equity_curve from further processing
+                    all_metrics.discard('equity_curve')
+                    # Also remove metrics we just calculated
+                    all_metrics.discard('total_dollar_pnl')
+                    all_metrics.discard('dollar_pnl_for_optimization')
+                    all_metrics.discard('max_drawdown')
+                    all_metrics.discard('max_drawdown_dollars')
+
+                except Exception as e:
+                    # If concatenation fails, fall back to first split's curve
+                    logging.getLogger(__name__).warning(f"Equity curve concatenation failed: {e}, using fallback")
+                    for result in split_results:
+                        if 'equity_curve' in result:
+                            aggregated['equity_curve'] = result['equity_curve']
+                            break
+                    all_metrics.discard('equity_curve')
+
+            # STEP 2: Concatenate daily PnL series
+            if 'daily_pnl_series' in all_metrics:
+                try:
+                    all_daily_pnl = []
+                    for result in split_results:
+                        if 'daily_pnl_series' in result:
+                            series = result['daily_pnl_series']
+                            if isinstance(series, (list, tuple)):
+                                all_daily_pnl.extend(series)
+                    if all_daily_pnl:
+                        aggregated['daily_pnl_series'] = all_daily_pnl
+                except Exception:
+                    pass  # Not critical
+                all_metrics.discard('daily_pnl_series')
+
+            # STEP 3: Aggregate remaining scalar metrics
+            for metric_name in all_metrics:
+                values = []
+                for result in split_results:
+                    if metric_name in result:
+                        metric_value = result[metric_name]
+                        # Ensure scalar extraction
+                        if hasattr(metric_value, 'item'):
+                            metric_value = metric_value.item()
+                        elif isinstance(metric_value, (list, tuple)):
+                            metric_value = float(metric_value[0]) if metric_value else 0.0
+                        elif not np.isscalar(metric_value):
+                            metric_value = float(metric_value)
+
+                        if not np.isnan(metric_value):
+                            values.append(metric_value)
+
+                if values:
+                    # Use appropriate aggregation method
+                    if metric_name in cumulative_metrics:
+                        # SUM for cumulative metrics
+                        aggregated[metric_name] = float(np.sum(values))
+                    elif metric_name in ratio_metrics:
+                        # MEDIAN for ratio metrics
+                        aggregated[metric_name] = float(np.median(values))
                     else:
-                        # Subsequent splits: adjust to continue from previous ending
-                        # The split curve starts at starting_equity, we need to shift it
-                        split_pnl_change = curve[-1] - curve[0]  # PnL change in this split
-                        previous_ending = concatenated_curve[-1]
+                        # Default to MEDIAN for unknown metrics
+                        aggregated[metric_name] = float(np.median(values))
 
-                        # Adjust entire curve to start where previous ended
-                        adjusted_curve = [previous_ending + (val - curve[0]) for val in curve]
-                        concatenated_curve.extend(adjusted_curve[1:])  # Skip first point to avoid duplicate
-
-                aggregated['equity_curve'] = concatenated_curve
-
-                # Calculate true cumulative PnL from concatenated equity curve
-                true_total_pnl = concatenated_curve[-1] - concatenated_curve[0]
-                aggregated['total_dollar_pnl'] = float(true_total_pnl)
-                aggregated['dollar_pnl_for_optimization'] = float(true_total_pnl)
-
-                # Calculate true max drawdown from concatenated curve
-                peak = concatenated_curve[0]
-                max_dd_dollars = 0.0
-                for equity in concatenated_curve:
-                    if equity > peak:
-                        peak = equity
-                    drawdown = peak - equity
-                    if drawdown > max_dd_dollars:
-                        max_dd_dollars = drawdown
-
-                max_dd_percent = (max_dd_dollars / peak * 100) if peak > 0 else 0.0
-                aggregated['max_drawdown'] = float(max_dd_percent)
-                aggregated['max_drawdown_dollars'] = float(max_dd_dollars)
-
-            all_metrics.remove('equity_curve')
-            # CRITICAL FIX: Remove these metrics so they don't get overwritten by the general aggregation loop
-            all_metrics.discard('total_dollar_pnl')
-            all_metrics.discard('dollar_pnl_for_optimization')
-            all_metrics.discard('max_drawdown')
-            all_metrics.discard('max_drawdown_dollars')
-
-        # CRITICAL FIX: Concatenate daily PnL series
-        if 'daily_pnl_series' in all_metrics:
-            all_daily_pnl = []
-            for result in split_results:
-                if 'daily_pnl_series' in result:
-                    all_daily_pnl.extend(result['daily_pnl_series'])
-            if all_daily_pnl:
-                aggregated['daily_pnl_series'] = all_daily_pnl
-            all_metrics.remove('daily_pnl_series')
-
-        # Define which metrics should be SUMMED (cumulative across splits)
-        sum_metrics = {
-            'total_trades', 'total_bars', 'commission_cost', 'slippage_cost',
-            'net_profit'  # Net profit is cumulative
-        }
-
-        # Define which metrics should use MAX (worst case)
-        max_metrics = set()  # max_drawdown already handled above
-
-        # Aggregate remaining scalar metrics
-        for metric_name in all_metrics:
-            values = []
-            for result in split_results:
-                if metric_name in result:
-                    metric_value = result[metric_name]
-                    # CRITICAL FIX: Ensure scalar extraction
-                    if hasattr(metric_value, 'item'):
-                        metric_value = metric_value.item()
-                    elif isinstance(metric_value, (list, tuple)):
-                        metric_value = float(metric_value[0]) if metric_value else 0.0
-                    elif not np.isscalar(metric_value):
-                        metric_value = float(metric_value)
-
-                    if not np.isnan(metric_value):
-                        values.append(metric_value)
-
-            if values:
-                # CRITICAL FIX: Use appropriate aggregation method
-                if metric_name in sum_metrics:
-                    # SUM for cumulative metrics
-                    aggregated[metric_name] = float(np.sum(values))
-                elif metric_name in max_metrics:
-                    # MAX for worst-case metrics
-                    aggregated[metric_name] = float(np.max(values))
+                    # Store additional statistics
+                    aggregated[f"{metric_name}_mean"] = float(np.mean(values))
+                    aggregated[f"{metric_name}_std"] = float(np.std(values))
+                    aggregated[f"{metric_name}_min"] = float(np.min(values))
+                    aggregated[f"{metric_name}_max"] = float(np.max(values))
                 else:
-                    # MEDIAN for ratio/statistical metrics (win_rate, sharpe, etc.)
-                    # These represent typical performance, not cumulative
-                    aggregated[metric_name] = float(np.median(values))
+                    # Handle missing values
+                    default_values = {
+                        'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'pnl': 0.0,
+                        'max_drawdown': 100.0, 'profit_factor': 1.0, 'win_rate': 0.0,
+                        'total_trades': 0, 'total_bars': 1000
+                    }
+                    aggregated[metric_name] = default_values.get(metric_name, 0.0)
 
-                # Store additional statistics for analysis
-                aggregated[f"{metric_name}_mean"] = float(np.mean(values))
-                aggregated[f"{metric_name}_std"] = float(np.std(values))
-                aggregated[f"{metric_name}_min"] = float(np.min(values))
-                aggregated[f"{metric_name}_max"] = float(np.max(values))
-            else:
-                # Handle missing values
-                default_values = {
-                    'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'pnl': 0.0,
-                    'max_drawdown': 100.0, 'profit_factor': 1.0, 'win_rate': 0.0,
-                    'total_trades': 0, 'total_bars': 1000
-                }
-                aggregated[metric_name] = default_values.get(metric_name, 0.0)
+            # STEP 4: Recalculate derived metrics if we have total_dollar_pnl
+            if 'total_dollar_pnl' in aggregated:
+                starting_equity = 50000.0
+                aggregated['total_return'] = (aggregated['total_dollar_pnl'] / starting_equity) * 100
+                aggregated['pnl'] = aggregated['total_return']
 
-        # CRITICAL FIX: Recalculate total_return percentage from true PnL
-        if 'total_dollar_pnl' in aggregated:
-            starting_equity = 50000.0
-            aggregated['total_return'] = (aggregated['total_dollar_pnl'] / starting_equity) * 100
-            aggregated['pnl'] = aggregated['total_return']  # Legacy compatibility
+            return aggregated
 
-        return aggregated
-    
+        except Exception as e:
+            # Critical: If aggregation completely fails, return safe defaults
+            logging.getLogger(__name__).error(f"Aggregation failed catastrophically: {e}, returning safe defaults")
+            return {
+                'total_dollar_pnl': 0.0,
+                'total_trades': 0,
+                'sharpe_ratio': 0.0,
+                'pnl': 0.0,
+                'equity_curve': [50000.0]
+            }
+
     def _calculate_intermediate_score(self, split_results: List[Dict[str, float]], composite_scorer: CompositeScore) -> float:
         """
         Calculate intermediate composite score for pruning decisions.
