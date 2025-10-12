@@ -72,7 +72,7 @@ class DatabaseService:
         try:
             conn = self.get_connection()
             query = """
-                SELECT study_id, study_name, direction
+                SELECT study_id, study_name
                 FROM studies
                 ORDER BY study_id DESC
                 LIMIT %s
@@ -89,10 +89,11 @@ class DatabaseService:
         try:
             conn = self.get_connection()
             query = """
-                SELECT t.trial_id, t.number, t.state, t.value, t.datetime_start, t.datetime_complete,
+                SELECT t.trial_id, t.number, t.state, tv.value, t.datetime_start, t.datetime_complete,
                        s.study_name
                 FROM trials t
                 JOIN studies s ON t.study_id = s.study_id
+                LEFT JOIN trial_values tv ON t.trial_id = tv.trial_id
                 WHERE s.study_name = %s
                 ORDER BY t.number DESC
             """
@@ -121,12 +122,13 @@ class DatabaseService:
             cur.execute("""
                 SELECT
                     COUNT(*) as total_trials,
-                    SUM(CASE WHEN state = 'COMPLETE' THEN 1 ELSE 0 END) as completed_trials,
-                    SUM(CASE WHEN state = 'RUNNING' THEN 1 ELSE 0 END) as running_trials,
-                    SUM(CASE WHEN state = 'PRUNED' THEN 1 ELSE 0 END) as pruned_trials,
-                    MAX(value) as best_value
-                FROM trials
-                WHERE study_id = %s
+                    SUM(CASE WHEN t.state = 'COMPLETE' THEN 1 ELSE 0 END) as completed_trials,
+                    SUM(CASE WHEN t.state = 'RUNNING' THEN 1 ELSE 0 END) as running_trials,
+                    SUM(CASE WHEN t.state = 'PRUNED' THEN 1 ELSE 0 END) as pruned_trials,
+                    MAX(tv.value) as best_value
+                FROM trials t
+                LEFT JOIN trial_values tv ON t.trial_id = tv.trial_id
+                WHERE t.study_id = %s
             """, (study_id,))
 
             result = cur.fetchone()
@@ -153,11 +155,12 @@ class DatabaseService:
         try:
             conn = self.get_connection()
             query = """
-                SELECT t.trial_id, t.number, t.value, t.state, t.datetime_complete
+                SELECT t.trial_id, t.number, tv.value, t.state, t.datetime_complete
                 FROM trials t
                 JOIN studies s ON t.study_id = s.study_id
+                LEFT JOIN trial_values tv ON t.trial_id = tv.trial_id
                 WHERE s.study_name = %s AND t.state = 'COMPLETE'
-                ORDER BY t.value DESC
+                ORDER BY tv.value DESC
                 LIMIT 1
             """
             df = pd.read_sql_query(query, conn, params=(study_name,))
@@ -199,6 +202,28 @@ class DatabaseService:
         except Exception as e:
             print(f"Error deleting study: {e}")
             return False
+
+    def get_trial_parameters(self, study_name: str, trial_number: int) -> Dict[str, Any]:
+        """Get parameters for a specific trial"""
+        try:
+            conn = self.get_connection()
+            query = """
+                SELECT tp.param_name, tp.param_value
+                FROM trial_params tp
+                JOIN trials t ON tp.trial_id = t.trial_id
+                JOIN studies s ON t.study_id = s.study_id
+                WHERE s.study_name = %s AND t.number = %s
+                ORDER BY tp.param_name
+            """
+            df = pd.read_sql_query(query, conn, params=(study_name, trial_number))
+            self.return_connection(conn)
+
+            if not df.empty:
+                return dict(zip(df['param_name'], df['param_value']))
+            return {}
+        except Exception as e:
+            print(f"Error getting trial parameters: {e}")
+            return {}
 
     def __del__(self):
         """Clean up connection pool"""

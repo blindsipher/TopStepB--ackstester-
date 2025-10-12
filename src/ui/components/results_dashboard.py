@@ -54,6 +54,105 @@ def render():
             if best_trial['datetime_complete']:
                 st.metric("Completed", best_trial['datetime_complete'].strftime("%Y-%m-%d %H:%M"))
 
+        # Display best trial parameters
+        with st.expander("View Best Trial Parameters", expanded=False):
+            params = {}
+            if 'number' not in best_trial:
+                st.warning("Trial number not available")
+            else:
+                try:
+                    params = db.get_trial_parameters(selected_study, best_trial['number'])
+                except Exception as e:
+                    st.error(f"Error loading trial parameters: {str(e)}")
+                    params = {}
+
+            if params:
+                def format_param_value(value):
+                    if value is None:
+                        return "N/A"
+                    elif isinstance(value, bool):
+                        return str(value)
+                    elif isinstance(value, float):
+                        return f"{value:.4f}"
+                    elif isinstance(value, int):
+                        return str(value)
+                    elif isinstance(value, (list, dict)):
+                        str_val = str(value)
+                        return str_val[:50] + "..." if len(str_val) > 50 else str_val
+                    else:
+                        return str(value)
+
+                # Categorize parameters with priority order to avoid overlaps
+                categorized_keys = set()
+
+                bollinger_params = {}
+                for k, v in params.items():
+                    if 'bb_' in k.lower():
+                        bollinger_params[k] = v
+                        categorized_keys.add(k)
+
+                keltner_params = {}
+                for k, v in params.items():
+                    if k not in categorized_keys and 'kc_' in k.lower():
+                        keltner_params[k] = v
+                        categorized_keys.add(k)
+
+                exit_params = {}
+                for k, v in params.items():
+                    if k not in categorized_keys and 'exit' in k.lower():
+                        exit_params[k] = v
+                        categorized_keys.add(k)
+
+                filter_params = {}
+                for k, v in params.items():
+                    if k not in categorized_keys and 'filter' in k.lower():
+                        filter_params[k] = v
+                        categorized_keys.add(k)
+
+                risk_params = {}
+                for k, v in params.items():
+                    if k not in categorized_keys and any(x in k.lower() for x in ['stop', 'risk', 'atr', 'target']):
+                        risk_params[k] = v
+                        categorized_keys.add(k)
+
+                other_params = {k: v for k, v in params.items() if k not in categorized_keys}
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if bollinger_params:
+                        st.write("**Bollinger Bands**")
+                        for k, v in bollinger_params.items():
+                            st.write(f"{k}: `{format_param_value(v)}`")
+
+                    if keltner_params:
+                        st.write("**Keltner Channels**")
+                        for k, v in keltner_params.items():
+                            st.write(f"{k}: `{format_param_value(v)}`")
+
+                    if filter_params:
+                        st.write("**Filters**")
+                        for k, v in filter_params.items():
+                            st.write(f"{k}: `{format_param_value(v)}`")
+
+                with col2:
+                    if risk_params:
+                        st.write("**Risk Management**")
+                        for k, v in risk_params.items():
+                            st.write(f"{k}: `{format_param_value(v)}`")
+
+                    if exit_params:
+                        st.write("**Exit Rules**")
+                        for k, v in exit_params.items():
+                            st.write(f"{k}: `{format_param_value(v)}`")
+
+                    if other_params:
+                        st.write("**Other Parameters**")
+                        for k, v in other_params.items():
+                            st.write(f"{k}: `{format_param_value(v)}`")
+            else:
+                st.info("No parameters found for this trial")
+
     # Trial history chart
     st.subheader("Trial History")
     fig = go.Figure()
@@ -89,7 +188,7 @@ def render():
 
     # Export options
     st.markdown("---")
-    if st.button("📥 Export Results to CSV"):
+    if st.button("Export Results to CSV"):
         csv = trials_df.to_csv(index=False)
         st.download_button(
             label="Download CSV",

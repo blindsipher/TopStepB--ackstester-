@@ -71,6 +71,6 @@ echo Press Ctrl+C to stop the server
 echo ================================================
 echo.
 
-streamlit run src\ui\app.py
+python -m streamlit run src\ui\app.py
 
 pause

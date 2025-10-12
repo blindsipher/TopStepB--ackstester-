@@ -32,7 +32,7 @@ def render():
 
             with col1:
                 st.write(f"**Study ID**: {study['study_id']}")
-                st.write(f"**Direction**: {study['direction']}")
+                st.write(f"**Study Name**: {study['study_name']}")
 
             with col2:
                 if st.button("View Results", key=f"view_{study['study_id']}"):
