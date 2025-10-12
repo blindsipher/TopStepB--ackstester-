@@ -9,7 +9,7 @@ from pathlib import Path
 class ConfigurationValidator:
     """Validate optimization configuration parameters"""
 
-    VALID_SYMBOLS = ['ES', 'NQ', 'YM', 'RTY', 'CL', 'GC', 'SI']
+    VALID_SYMBOLS = ['ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K', 'CL', 'MCL', 'GC', 'MGC', 'SI']
     VALID_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
     VALID_ACCOUNT_TYPES = ['topstep_50k', 'topstep_100k', 'topstep_150k']
     VALID_SPLIT_TYPES = ['chronological', 'walk_forward']
