@@ -32,6 +32,10 @@ results/
 tear_sheets/
 *.db
 
+# ----- Data files -----
+data/converted/
+data/*.csv
+
 # Project subfolder outputs (path contains spaces)
 TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/logs/
 TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/results/
