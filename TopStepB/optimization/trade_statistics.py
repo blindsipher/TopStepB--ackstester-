@@ -130,7 +130,7 @@ def aggregate_trade_statistics(split_results: List[Dict[str, Any]]) -> Dict[str,
                     all_trades.extend(individual)
 
             total_trades += result.get('total_trades', 0)
-            total_data_length += result.get('data_length', 0)
+            total_data_length += result.get('total_bars', 0)
 
         if not all_trades:
             return get_default_trade_statistics()
