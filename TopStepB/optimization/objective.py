@@ -751,6 +751,11 @@ class StatefulObjective:
                 aggregated['max_drawdown_dollars'] = float(max_dd_dollars)
 
             all_metrics.remove('equity_curve')
+            # CRITICAL FIX: Remove these metrics so they don't get overwritten by the general aggregation loop
+            all_metrics.discard('total_dollar_pnl')
+            all_metrics.discard('dollar_pnl_for_optimization')
+            all_metrics.discard('max_drawdown')
+            all_metrics.discard('max_drawdown_dollars')
 
         # CRITICAL FIX: Concatenate daily PnL series
         if 'daily_pnl_series' in all_metrics:
@@ -2339,6 +2344,11 @@ class ObjectiveFactory:
                 aggregated['max_drawdown_dollars'] = float(max_dd_dollars)
 
             all_metrics.remove('equity_curve')
+            # CRITICAL FIX: Remove these metrics so they don't get overwritten by the general aggregation loop
+            all_metrics.discard('total_dollar_pnl')
+            all_metrics.discard('dollar_pnl_for_optimization')
+            all_metrics.discard('max_drawdown')
+            all_metrics.discard('max_drawdown_dollars')
 
         # CRITICAL FIX: Concatenate daily PnL series
         if 'daily_pnl_series' in all_metrics:
