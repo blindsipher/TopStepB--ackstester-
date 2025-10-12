@@ -37,7 +37,8 @@ def render():
             with col2:
                 if st.button("View Results", key=f"view_{study['study_id']}"):
                     st.session_state.selected_study = study['study_name']
-                    st.switch_page("Results")
+                    st.info("Navigate to 'Results' page in the sidebar to view this study")
+                    st.rerun()
 
             with col3:
                 if st.button("Delete", key=f"delete_{study['study_id']}", type="secondary"):

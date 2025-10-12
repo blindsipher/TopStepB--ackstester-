@@ -27,7 +27,13 @@ def render():
         return
 
     study_names = [s['study_name'] for s in studies]
-    selected_study = st.selectbox("Select Study", options=study_names)
+
+    # Check if a study was pre-selected from History page
+    default_index = 0
+    if 'selected_study' in st.session_state and st.session_state.selected_study in study_names:
+        default_index = study_names.index(st.session_state.selected_study)
+
+    selected_study = st.selectbox("Select Study", options=study_names, index=default_index)
 
     if not selected_study:
         return
