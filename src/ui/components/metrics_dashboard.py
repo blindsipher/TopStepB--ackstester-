@@ -233,6 +233,33 @@ def render():
         st.write(f"  Max Consecutive Wins: {format_number(metrics.get('max_consecutive_wins', 0))}")
         st.write(f"  Max Consecutive Losses: {format_number(metrics.get('max_consecutive_losses', 0))}")
 
+    # Trade-by-Trade Equity Curve
+    trade_equity_curve = metrics.get('trade_equity_curve', None)
+    if trade_equity_curve and isinstance(trade_equity_curve, list) and len(trade_equity_curve) > 1:
+        st.markdown("---")
+        st.subheader("Trade-by-Trade Equity Curve")
+
+        import pandas as pd
+
+        # Create DataFrame for chart
+        df_trades = pd.DataFrame({
+            'Trade #': range(len(trade_equity_curve)),
+            'Equity': trade_equity_curve
+        })
+
+        # Display line chart
+        st.line_chart(df_trades.set_index('Trade #')['Equity'])
+
+        # Show key statistics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Starting Equity", format_currency(trade_equity_curve[0]))
+        with col2:
+            st.metric("Final Equity", format_currency(trade_equity_curve[-1]))
+        with col3:
+            peak_equity = max(trade_equity_curve)
+            st.metric("Peak Equity", format_currency(peak_equity))
+
     # Show parameters
     st.markdown("---")
     st.subheader("Winning Parameters")

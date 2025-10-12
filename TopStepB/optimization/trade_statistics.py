@@ -54,11 +54,38 @@ def calculate_trade_statistics(
         stats['max_consecutive_wins'] = int(calculate_max_consecutive(trade_dollar_pnls, True))
         stats['max_consecutive_losses'] = int(calculate_max_consecutive(trade_dollar_pnls, False))
 
+        # Trade-by-trade equity curve
+        stats['trade_equity_curve'] = calculate_trade_equity_curve(trade_dollar_pnls)
+
         return stats
 
     except Exception as e:
         logger.warning(f"Trade statistics calculation failed: {e}")
         return get_default_trade_statistics()
+
+
+def calculate_trade_equity_curve(trade_pnls: List[float], starting_equity: float = 50000.0) -> List[float]:
+    """
+    Calculate trade-by-trade equity curve.
+
+    Args:
+        trade_pnls: List of individual trade P&L values
+        starting_equity: Starting account equity
+
+    Returns:
+        List of equity values after each trade
+    """
+    if not trade_pnls:
+        return [starting_equity]
+
+    equity_curve = [starting_equity]
+    current_equity = starting_equity
+
+    for pnl in trade_pnls:
+        current_equity += pnl
+        equity_curve.append(current_equity)
+
+    return equity_curve
 
 
 def calculate_max_consecutive(pnls: List[float], wins: bool) -> int:
@@ -88,7 +115,7 @@ def calculate_max_consecutive(pnls: List[float], wins: bool) -> int:
     return max_streak
 
 
-def get_default_trade_statistics() -> Dict[str, float]:
+def get_default_trade_statistics() -> Dict[str, Any]:
     """
     Return default values for trade statistics when no trades exist.
 
@@ -103,7 +130,8 @@ def get_default_trade_statistics() -> Dict[str, float]:
         'expectancy': 0.0,
         'trades_per_day': 0.0,
         'max_consecutive_wins': 0,
-        'max_consecutive_losses': 0
+        'max_consecutive_losses': 0,
+        'trade_equity_curve': [50000.0]
     }
 
 
