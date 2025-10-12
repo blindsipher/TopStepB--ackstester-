@@ -12,7 +12,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.ui.utils.session_state import SessionState
-from src.ui.components import configuration, data_loader, optimization_monitor, results_dashboard, study_browser
+from src.ui.components import configuration, data_loader, optimization_monitor, metrics_dashboard, results_dashboard, study_browser
 
 # Page configuration
 st.set_page_config(
@@ -75,8 +75,8 @@ def main():
 
         selected = option_menu(
             menu_title=None,
-            options=["Configuration", "Data Loader", "Run Optimization", "Monitor", "Results", "History"],
-            icons=["gear", "file-earmark-bar-graph", "play-circle", "activity", "bar-chart", "clock-history"],
+            options=["Configuration", "Data Loader", "Run Optimization", "Monitor", "Metrics", "Results", "History"],
+            icons=["gear", "file-earmark-bar-graph", "play-circle", "activity", "graph-up", "bar-chart", "clock-history"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -116,6 +116,8 @@ def main():
         render_optimization_launcher()
     elif selected == "Monitor":
         optimization_monitor.render()
+    elif selected == "Metrics":
+        metrics_dashboard.render()
     elif selected == "Results":
         results_dashboard.render()
     elif selected == "History":

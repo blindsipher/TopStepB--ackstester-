@@ -48,6 +48,53 @@ class DateFormatter:
         """Format date only"""
         if isinstance(dt, str):
             return dt
+
+
+# Standalone helper functions for metrics dashboard
+def format_currency(value: Union[float, None]) -> str:
+    """Format value as currency with None handling"""
+    try:
+        import pandas as pd
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "N/A"
+        return f"${value:,.2f}" if value >= 0 else f"-${abs(value):,.2f}"
+    except:
+        return "N/A"
+
+
+def format_percentage(value: Union[float, None]) -> str:
+    """Format value as percentage with None handling"""
+    try:
+        import pandas as pd
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "N/A"
+        return f"{value:.2f}%"
+    except:
+        return "N/A"
+
+
+def format_number(value: Union[float, int, None]) -> str:
+    """Format value as number with commas and None handling"""
+    try:
+        import pandas as pd
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "N/A"
+        if isinstance(value, int):
+            return f"{value:,}"
+        return f"{value:,.2f}"
+    except:
+        return "N/A"
+
+
+def format_ratio(value: Union[float, None], decimals: int = 2) -> str:
+    """Format ratio values (Sharpe, Sortino, etc.) with None handling"""
+    try:
+        import pandas as pd
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "N/A"
+        return f"{value:.{decimals}f}"
+    except:
+        return "N/A"
         return dt.strftime(format_str)
 
     @staticmethod

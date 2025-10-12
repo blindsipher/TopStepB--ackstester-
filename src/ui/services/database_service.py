@@ -225,6 +225,78 @@ class DatabaseService:
             print(f"Error getting trial parameters: {e}")
             return {}
 
+    def get_trial_metrics(self, trial_id: int) -> Dict[str, Any]:
+        """
+        Get all performance metrics for a specific trial
+
+        Args:
+            trial_id: ID of the trial
+
+        Returns:
+            Dictionary of metric_name: value pairs
+        """
+        try:
+            conn = self.get_connection()
+            query = """
+                SELECT key, value_json
+                FROM trial_user_attributes
+                WHERE trial_id = %s AND key LIKE 'metric_%'
+            """
+            cur = conn.cursor()
+            cur.execute(query, (trial_id,))
+            results = cur.fetchall()
+            cur.close()
+            self.return_connection(conn)
+
+            import json
+            metrics = {}
+            for key, value_json in results:
+                metric_name = key.replace('metric_', '')
+                try:
+                    metrics[metric_name] = json.loads(value_json)
+                except:
+                    metrics[metric_name] = value_json
+
+            return metrics
+        except Exception as e:
+            print(f"Error getting trial metrics: {e}")
+            return {}
+
+    def get_best_trial_with_metrics(self, study_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get best trial including its performance metrics
+
+        Args:
+            study_name: Name of the study
+
+        Returns:
+            Dictionary with trial info and metrics
+        """
+        best_trial = self.get_best_trial(study_name)
+        if not best_trial:
+            return None
+
+        # Get trial_id from the best trial
+        conn = self.get_connection()
+        query = """
+            SELECT t.trial_id
+            FROM trials t
+            JOIN studies s ON t.study_id = s.study_id
+            WHERE s.study_name = %s AND t.number = %s
+        """
+        cur = conn.cursor()
+        cur.execute(query, (study_name, best_trial['number']))
+        result = cur.fetchone()
+        cur.close()
+        self.return_connection(conn)
+
+        if result:
+            trial_id = result[0]
+            metrics = self.get_trial_metrics(trial_id)
+            best_trial['metrics'] = metrics
+
+        return best_trial
+
     def __del__(self):
         """Clean up connection pool"""
         if self.connection_pool:
