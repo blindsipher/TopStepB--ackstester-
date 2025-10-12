@@ -262,6 +262,28 @@ class DatabaseService:
             print(f"Error getting trial metrics: {e}")
             return {}
 
+    def get_best_trial_with_metrics(self, study_name: str) -> Optional[Dict[str, Any]]:
+        """Get best trial with all its metrics"""
+        try:
+            # First get the best trial
+            best_trial = self.get_best_trial(study_name)
+            if not best_trial:
+                return None
+
+            # Get metrics for this trial
+            trial_number = best_trial['number']
+            metrics = self.get_trial_metrics(study_name, trial_number)
+
+            # Merge trial info and metrics
+            result = best_trial.copy()
+            result['metrics'] = metrics
+
+            return result
+
+        except Exception as e:
+            print(f"Error getting best trial with metrics: {e}")
+            return None
+
     def __del__(self):
         """Clean up connection pool"""
         if self.connection_pool:
