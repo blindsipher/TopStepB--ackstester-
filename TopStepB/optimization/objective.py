@@ -1069,7 +1069,46 @@ class StatefulObjective:
                 # If no trades, create minimal daily series to prevent errors
                 if not daily_pnl_series:
                     daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
-                
+
+                # Calculate detailed trade statistics
+                avg_win = np.mean(winning_dollar_pnls) if winning_dollar_pnls else 0.0
+                avg_loss = np.mean(losing_dollar_pnls) if losing_dollar_pnls else 0.0
+                best_trade = max(trade_dollar_pnls) if trade_dollar_pnls else 0.0
+                worst_trade = min(trade_dollar_pnls) if trade_dollar_pnls else 0.0
+
+                # Calculate consecutive wins/losses
+                max_consecutive_wins = 0
+                max_consecutive_losses = 0
+                current_wins = 0
+                current_losses = 0
+                for pnl in trade_dollar_pnls:
+                    if pnl > 0:
+                        current_wins += 1
+                        current_losses = 0
+                        if current_wins > max_consecutive_wins:
+                            max_consecutive_wins = current_wins
+                    else:
+                        current_losses += 1
+                        current_wins = 0
+                        if current_losses > max_consecutive_losses:
+                            max_consecutive_losses = current_losses
+
+                # Calculate trading days and dates
+                trading_days = len(sorted_dates) if sorted_dates else 1
+                date_start = str(sorted_dates[0]) if sorted_dates else ''
+                date_end = str(sorted_dates[-1]) if sorted_dates else ''
+                trades_per_day = trades / trading_days if trading_days > 0 else 0.0
+
+                # Calculate Calmar ratio (return / max drawdown)
+                calmar_ratio = 0.0
+                if max_drawdown_percentage > 0:
+                    calmar_ratio = total_return_percentage / max_drawdown_percentage
+                elif total_return_percentage > 0:
+                    calmar_ratio = 999.0  # No drawdown but positive return
+
+                # Calculate expectancy (average $ per trade)
+                expectancy = total_dollar_pnl / trades if trades > 0 else 0.0
+
                 # INSTITUTIONAL COMPLIANCE: Comprehensive tick-based metrics
                 metrics = {
                     'total_return': total_return_percentage,
@@ -1087,7 +1126,19 @@ class StatefulObjective:
                     'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
                     'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
                     'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'dollar_pnl_for_optimization': total_dollar_pnl,  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'avg_win': avg_win,
+                    'avg_loss': avg_loss,
+                    'best_trade': best_trade,
+                    'worst_trade': worst_trade,
+                    'max_consecutive_wins': max_consecutive_wins,
+                    'max_consecutive_losses': max_consecutive_losses,
+                    'trades_per_day': trades_per_day,
+                    'calmar_ratio': calmar_ratio,
+                    'expectancy': expectancy,
+                    'trading_days': trading_days,
+                    'date_start': date_start,
+                    'date_end': date_end
                 }
             else:
                 metrics = self._get_zero_trade_metrics()
@@ -2060,7 +2111,46 @@ class ObjectiveFactory:
                 # If no trades, create minimal daily series to prevent errors
                 if not daily_pnl_series:
                     daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
-                
+
+                # Calculate detailed trade statistics
+                avg_win = np.mean(winning_dollar_pnls) if winning_dollar_pnls else 0.0
+                avg_loss = np.mean(losing_dollar_pnls) if losing_dollar_pnls else 0.0
+                best_trade = max(trade_dollar_pnls) if trade_dollar_pnls else 0.0
+                worst_trade = min(trade_dollar_pnls) if trade_dollar_pnls else 0.0
+
+                # Calculate consecutive wins/losses
+                max_consecutive_wins = 0
+                max_consecutive_losses = 0
+                current_wins = 0
+                current_losses = 0
+                for pnl in trade_dollar_pnls:
+                    if pnl > 0:
+                        current_wins += 1
+                        current_losses = 0
+                        if current_wins > max_consecutive_wins:
+                            max_consecutive_wins = current_wins
+                    else:
+                        current_losses += 1
+                        current_wins = 0
+                        if current_losses > max_consecutive_losses:
+                            max_consecutive_losses = current_losses
+
+                # Calculate trading days and dates
+                trading_days = len(sorted_dates) if sorted_dates else 1
+                date_start = str(sorted_dates[0]) if sorted_dates else ''
+                date_end = str(sorted_dates[-1]) if sorted_dates else ''
+                trades_per_day = trades / trading_days if trading_days > 0 else 0.0
+
+                # Calculate Calmar ratio (return / max drawdown)
+                calmar_ratio = 0.0
+                if max_drawdown_percentage > 0:
+                    calmar_ratio = total_return_percentage / max_drawdown_percentage
+                elif total_return_percentage > 0:
+                    calmar_ratio = 999.0  # No drawdown but positive return
+
+                # Calculate expectancy (average $ per trade)
+                expectancy = total_dollar_pnl / trades if trades > 0 else 0.0
+
                 # INSTITUTIONAL COMPLIANCE: Comprehensive tick-based metrics
                 metrics = {
                     'total_return': total_return_percentage,
@@ -2078,7 +2168,19 @@ class ObjectiveFactory:
                     'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
                     'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
                     'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'dollar_pnl_for_optimization': total_dollar_pnl,  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
+                    'avg_win': avg_win,
+                    'avg_loss': avg_loss,
+                    'best_trade': best_trade,
+                    'worst_trade': worst_trade,
+                    'max_consecutive_wins': max_consecutive_wins,
+                    'max_consecutive_losses': max_consecutive_losses,
+                    'trades_per_day': trades_per_day,
+                    'calmar_ratio': calmar_ratio,
+                    'expectancy': expectancy,
+                    'trading_days': trading_days,
+                    'date_start': date_start,
+                    'date_end': date_end
                 }
             else:
                 metrics = self._get_zero_trade_metrics()
