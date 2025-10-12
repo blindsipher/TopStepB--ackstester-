@@ -96,6 +96,44 @@ def render():
                     st.write(f"**{k}:** {v}")
         return
 
+    # Data Statistics (if available)
+    st.markdown("---")
+    st.subheader("Backtest Data Statistics")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        data_bars = metrics.get('total_bars', metrics.get('num_bars', 'N/A'))
+        st.metric(
+            "Bars Processed",
+            format_number(data_bars) if data_bars != 'N/A' else 'N/A',
+            help="Total number of price bars analyzed"
+        )
+
+    with col2:
+        trading_days = metrics.get('trading_days', 'N/A')
+        st.metric(
+            "Trading Days",
+            format_number(trading_days) if trading_days != 'N/A' else 'N/A',
+            help="Number of trading days in the backtest"
+        )
+
+    with col3:
+        date_start = metrics.get('date_start', 'N/A')
+        st.metric(
+            "Start Date",
+            str(date_start)[:10] if date_start != 'N/A' else 'N/A',
+            help="First date in backtest data"
+        )
+
+    with col4:
+        date_end = metrics.get('date_end', 'N/A')
+        st.metric(
+            "End Date",
+            str(date_end)[:10] if date_end != 'N/A' else 'N/A',
+            help="Last date in backtest data"
+        )
+
     # Display detailed metrics
     st.markdown("---")
     st.subheader("Key Performance Indicators")

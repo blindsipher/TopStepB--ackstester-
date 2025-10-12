@@ -8,6 +8,10 @@ import pandas as pd
 from typing import Dict, List, Optional, Any
 import sys
 from pathlib import Path
+import warnings
+
+# Suppress pandas SQLAlchemy warnings (we're using psycopg2 directly)
+warnings.filterwarnings('ignore', message='.*SQLAlchemy connectable.*')
 
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
