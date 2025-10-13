@@ -53,6 +53,32 @@ class PipelineState:
     validation_tests: List[str] = field(
         default_factory=lambda: ["in_sample", "out_of_sample"]
     )
+
+    # Validation Test Configuration Parameters
+    validation_min_trades_in_sample: int = 10
+    validation_min_trades_out_of_sample: int = 5
+
+    # In-Sample Permutation Test
+    validation_in_sample_permutation: bool = False
+    validation_in_sample_permutation_count: int = 1000
+    validation_in_sample_permutation_threshold: float = 0.05
+
+    # Out-of-Sample Permutation Test
+    validation_out_of_sample_permutation: bool = False
+    validation_out_of_sample_permutation_count: int = 1000
+    validation_out_of_sample_permutation_threshold: float = 0.05
+
+    # Monte Carlo Simulation
+    validation_monte_carlo: bool = False
+    validation_monte_carlo_simulations: int = 100
+
+    # Noise Injection Test
+    validation_noise_injection: bool = False
+    validation_noise_injection_simulations: int = 100
+    validation_noise_injection_sigma: float = 0.01
+
+    # Regime Testing
+    validation_regime_testing: bool = False
     
     
     # Runtime State (populated during pipeline execution)

@@ -54,7 +54,33 @@ def collect_cli_config() -> Optional[PipelineState]:
         default='in_sample,out_of_sample,in_sample_permutation,out_of_sample_permutation',
         help='Comma-separated list of validation tests to run or "all"'
     )
-    
+
+    # Validation test configuration
+    parser.add_argument('--validation-min-trades-in-sample', type=int, default=10, help='Minimum trades required in-sample (default: 10)')
+    parser.add_argument('--validation-min-trades-out-of-sample', type=int, default=5, help='Minimum trades required out-of-sample (default: 5)')
+
+    # In-Sample Permutation Test
+    parser.add_argument('--validation-in-sample-permutation', action='store_true', help='Enable in-sample permutation test')
+    parser.add_argument('--validation-in-sample-permutation-count', type=int, default=1000, help='Number of permutations for in-sample test (default: 1000)')
+    parser.add_argument('--validation-in-sample-permutation-threshold', type=float, default=0.05, help='P-value threshold for in-sample permutation (default: 0.05)')
+
+    # Out-of-Sample Permutation Test
+    parser.add_argument('--validation-out-of-sample-permutation', action='store_true', help='Enable out-of-sample permutation test')
+    parser.add_argument('--validation-out-of-sample-permutation-count', type=int, default=1000, help='Number of permutations for out-of-sample test (default: 1000)')
+    parser.add_argument('--validation-out-of-sample-permutation-threshold', type=float, default=0.05, help='P-value threshold for out-of-sample permutation (default: 0.05)')
+
+    # Monte Carlo Simulation
+    parser.add_argument('--validation-monte-carlo', action='store_true', help='Enable Monte Carlo simulation test')
+    parser.add_argument('--validation-monte-carlo-simulations', type=int, default=100, help='Number of Monte Carlo simulations (default: 100)')
+
+    # Noise Injection Test
+    parser.add_argument('--validation-noise-injection', action='store_true', help='Enable noise injection test')
+    parser.add_argument('--validation-noise-injection-simulations', type=int, default=100, help='Number of noise injection simulations (default: 100)')
+    parser.add_argument('--validation-noise-injection-sigma', type=float, default=0.01, help='Noise injection sigma/std dev (default: 0.01)')
+
+    # Regime Testing
+    parser.add_argument('--validation-regime-testing', action='store_true', help='Enable regime testing')
+
     # Parse arguments
     try:
         args = parser.parse_args()
@@ -106,7 +132,21 @@ def collect_cli_config() -> Optional[PipelineState]:
             memory_per_worker_mb=args.memory_per_worker_mb,
             timeout_per_trial=args.timeout_per_trial,
             results_top_n=args.results_top_n,
-            validation_tests=validation_tests
+            validation_tests=validation_tests,
+            validation_min_trades_in_sample=args.validation_min_trades_in_sample,
+            validation_min_trades_out_of_sample=args.validation_min_trades_out_of_sample,
+            validation_in_sample_permutation=args.validation_in_sample_permutation,
+            validation_in_sample_permutation_count=args.validation_in_sample_permutation_count,
+            validation_in_sample_permutation_threshold=args.validation_in_sample_permutation_threshold,
+            validation_out_of_sample_permutation=args.validation_out_of_sample_permutation,
+            validation_out_of_sample_permutation_count=args.validation_out_of_sample_permutation_count,
+            validation_out_of_sample_permutation_threshold=args.validation_out_of_sample_permutation_threshold,
+            validation_monte_carlo=args.validation_monte_carlo,
+            validation_monte_carlo_simulations=args.validation_monte_carlo_simulations,
+            validation_noise_injection=args.validation_noise_injection,
+            validation_noise_injection_simulations=args.validation_noise_injection_simulations,
+            validation_noise_injection_sigma=args.validation_noise_injection_sigma,
+            validation_regime_testing=args.validation_regime_testing
         )
         
     except SystemExit:

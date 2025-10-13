@@ -110,9 +110,46 @@ class PipelineService:
             "--results-top-n", str(config.get('results_top_n', 10)),
         ])
 
-        # Optional: validation tests
-        if config.get('validation_tests'):
-            args.extend(["--validation-tests", config['validation_tests']])
+        # Validation configuration
+        # Minimum trade requirements
+        if config.get('validation_min_trades_in_sample') is not None:
+            args.extend(["--validation-min-trades-in-sample", str(config['validation_min_trades_in_sample'])])
+        if config.get('validation_min_trades_out_of_sample') is not None:
+            args.extend(["--validation-min-trades-out-of-sample", str(config['validation_min_trades_out_of_sample'])])
+
+        # In-Sample Permutation Test
+        if config.get('validation_in_sample_permutation'):
+            args.append("--validation-in-sample-permutation")
+            if config.get('validation_in_sample_permutation_count') is not None:
+                args.extend(["--validation-in-sample-permutation-count", str(config['validation_in_sample_permutation_count'])])
+            if config.get('validation_in_sample_permutation_threshold') is not None:
+                args.extend(["--validation-in-sample-permutation-threshold", str(config['validation_in_sample_permutation_threshold'])])
+
+        # Out-of-Sample Permutation Test
+        if config.get('validation_out_of_sample_permutation'):
+            args.append("--validation-out-of-sample-permutation")
+            if config.get('validation_out_of_sample_permutation_count') is not None:
+                args.extend(["--validation-out-of-sample-permutation-count", str(config['validation_out_of_sample_permutation_count'])])
+            if config.get('validation_out_of_sample_permutation_threshold') is not None:
+                args.extend(["--validation-out-of-sample-permutation-threshold", str(config['validation_out_of_sample_permutation_threshold'])])
+
+        # Monte Carlo Simulation
+        if config.get('validation_monte_carlo'):
+            args.append("--validation-monte-carlo")
+            if config.get('validation_monte_carlo_simulations') is not None:
+                args.extend(["--validation-monte-carlo-simulations", str(config['validation_monte_carlo_simulations'])])
+
+        # Noise Injection Test
+        if config.get('validation_noise_injection'):
+            args.append("--validation-noise-injection")
+            if config.get('validation_noise_injection_simulations') is not None:
+                args.extend(["--validation-noise-injection-simulations", str(config['validation_noise_injection_simulations'])])
+            if config.get('validation_noise_injection_sigma') is not None:
+                args.extend(["--validation-noise-injection-sigma", str(config['validation_noise_injection_sigma'])])
+
+        # Regime Testing
+        if config.get('validation_regime_testing'):
+            args.append("--validation-regime-testing")
 
         return args
 
