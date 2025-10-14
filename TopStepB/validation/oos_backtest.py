@@ -123,7 +123,7 @@ class OOSBacktester:
 
             # Load OOS data
             data_loader = DataLoader()
-            data = data_loader.load_data(oos_data_file, symbol, timeframe)
+            data = data_loader.load_file(oos_data_file)
 
             if data is None or len(data) == 0:
                 self.logger.error("Failed to load OOS data")
@@ -158,18 +158,25 @@ class OOSBacktester:
             # Import and instantiate strategy
             strategy_module = __import__(
                 f'TopStepB.strategies.{strategy_name}.strategy',
-                fromlist=['Strategy']
+                fromlist=['']
             )
-            strategy_class = getattr(strategy_module, 'Strategy')
 
-            # Run backtest using StatefulObjective
-            objective = StatefulObjective(
-                strategy_name=strategy_name,
-                strategy_class=strategy_class,
-                data=data,
-                trading_config=trading_config,
-                study_name=f"OOS_{saved_data['study_name']}"
-            )
+            # Find the strategy class dynamically
+            # Convert strategy_name to class name (e.g., "bollinger_squeeze" -> "BollingerSqueezeStrategy")
+            class_name_parts = [part.capitalize() for part in strategy_name.split('_')]
+            expected_class_name = ''.join(class_name_parts) + 'Strategy'
+
+            strategy_class = getattr(strategy_module, expected_class_name, None)
+
+            if strategy_class is None:
+                # Fallback: try to find any class ending with 'Strategy'
+                for name in dir(strategy_module):
+                    if name.endswith('Strategy') and not name.startswith('_'):
+                        strategy_class = getattr(strategy_module, name)
+                        break
+
+            if strategy_class is None:
+                raise ValueError(f"No strategy class found in {strategy_name}.strategy")
 
             # Convert parameters to correct types
             typed_params = {}
@@ -182,17 +189,26 @@ class OOSBacktester:
                 else:
                     typed_params[key] = float(value)
 
-            # Run backtest
-            result = objective._run_simplified_backtest(
-                strategy_instance=None,  # Will be created inside
-                signals=None,  # Will be generated inside
-                data=data,
-                trading_config=trading_config,
-                execution_config={'parameters': typed_params}
-            )
+            self.logger.info(f"Running strategy with {len(typed_params)} parameters")
 
-            # Extract metrics
-            oos_metrics = result.get('metrics', {})
+            # Instantiate strategy with parameters
+            strategy = strategy_class(**typed_params)
+
+            # Generate signals
+            signals = strategy.generate_signals(data)
+
+            # Import execution engine
+            from execution.simple_executor import SimpleExecutor
+
+            # Run backtest with execution engine
+            executor = SimpleExecutor(trading_config)
+            trades = executor.execute_backtest(data, signals)
+
+            self.logger.info(f"Generated {len(trades)} trades")
+
+            # Calculate metrics from trades
+            from optimization.metrics import calculate_metrics_from_trades
+            oos_metrics = calculate_metrics_from_trades(trades, data, trading_config)
 
             # Build result summary
             summary = {

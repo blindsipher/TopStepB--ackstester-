@@ -247,26 +247,165 @@ def render_optimization_config():
 
 def render_validation_config():
     """Render validation configuration section"""
-    st.subheader("Validation Tests")
+    st.subheader("Validation Gauntlet Tests")
 
-    st.write("Select which validation tests to run after optimization:")
+    st.info("Configure the validation tests that will run on deployed strategies after optimization.")
 
-    validation_options = [
-        ("permutation", "Permutation Test", "Test if results are due to chance"),
-        ("monte_carlo", "Monte Carlo Simulation", "Simulate different market scenarios"),
-        ("walk_forward", "Walk-Forward Analysis", "Test on sequential time periods"),
-        ("regime_detection", "Regime Detection", "Test across different market regimes"),
-        ("noise_injection", "Noise Injection", "Test robustness to data noise")
-    ]
+    # Always-on baseline tests
+    st.markdown("### Core Tests (Always Enabled)")
+    st.markdown("- **In-Sample Performance**: Verify performance on training data")
+    st.markdown("- **Out-of-Sample Performance**: Verify performance on held-out test data")
 
-    selected_tests = []
-    for test_id, test_name, test_desc in validation_options:
-        if st.checkbox(test_name, help=test_desc):
-            selected_tests.append(test_id)
+    st.markdown("---")
 
-    # Store as comma-separated string
-    validation_tests = ','.join(selected_tests) if selected_tests else None
-    SessionState.update_configuration('validation_tests', validation_tests)
+    # Optional advanced tests
+    st.markdown("### Advanced Validation Tests (Optional)")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # In-Sample Permutation Test
+        enable_is_perm = st.checkbox(
+            "In-Sample Permutation Test",
+            value=st.session_state.get('configuration', {}).get('validation_in_sample_permutation', False),
+            help="Randomization test: Shuffle returns 1000 times to verify results aren't due to luck"
+        )
+        SessionState.update_configuration('validation_in_sample_permutation', enable_is_perm)
+
+        if enable_is_perm:
+            is_perm_count = st.number_input(
+                "Permutations",
+                min_value=100,
+                max_value=10000,
+                value=1000,
+                step=100,
+                key="is_perm_count"
+            )
+            SessionState.update_configuration('validation_in_sample_permutation_count', is_perm_count)
+
+            is_perm_threshold = st.number_input(
+                "P-value Threshold",
+                min_value=0.01,
+                max_value=0.20,
+                value=0.05,
+                step=0.01,
+                key="is_perm_threshold",
+                help="Strategy passes if p-value < threshold"
+            )
+            SessionState.update_configuration('validation_in_sample_permutation_threshold', is_perm_threshold)
+
+        # Monte Carlo Simulation
+        enable_mc = st.checkbox(
+            "Monte Carlo Simulation",
+            value=st.session_state.get('configuration', {}).get('validation_monte_carlo', False),
+            help="Run 100+ simulations with resampled returns to test consistency"
+        )
+        SessionState.update_configuration('validation_monte_carlo', enable_mc)
+
+        if enable_mc:
+            mc_sims = st.number_input(
+                "Simulations",
+                min_value=50,
+                max_value=1000,
+                value=100,
+                step=50,
+                key="mc_sims"
+            )
+            SessionState.update_configuration('validation_monte_carlo_simulations', mc_sims)
+
+        # Noise Injection Test
+        enable_noise = st.checkbox(
+            "Noise Injection Test",
+            value=st.session_state.get('configuration', {}).get('validation_noise_injection', False),
+            help="Add random noise (sigma=0.01) to prices to test robustness"
+        )
+        SessionState.update_configuration('validation_noise_injection', enable_noise)
+
+        if enable_noise:
+            noise_sims = st.number_input(
+                "Noise Simulations",
+                min_value=50,
+                max_value=500,
+                value=100,
+                step=10,
+                key="noise_sims"
+            )
+            SessionState.update_configuration('validation_noise_injection_simulations', noise_sims)
+
+            noise_sigma = st.number_input(
+                "Noise Sigma",
+                min_value=0.001,
+                max_value=0.1,
+                value=0.01,
+                step=0.001,
+                format="%.3f",
+                key="noise_sigma"
+            )
+            SessionState.update_configuration('validation_noise_injection_sigma', noise_sigma)
+
+    with col2:
+        # Out-of-Sample Permutation Test
+        enable_oos_perm = st.checkbox(
+            "Out-of-Sample Permutation Test",
+            value=st.session_state.get('configuration', {}).get('validation_out_of_sample_permutation', False),
+            help="Randomization test on held-out test data"
+        )
+        SessionState.update_configuration('validation_out_of_sample_permutation', enable_oos_perm)
+
+        if enable_oos_perm:
+            oos_perm_count = st.number_input(
+                "Permutations",
+                min_value=100,
+                max_value=10000,
+                value=1000,
+                step=100,
+                key="oos_perm_count"
+            )
+            SessionState.update_configuration('validation_out_of_sample_permutation_count', oos_perm_count)
+
+            oos_perm_threshold = st.number_input(
+                "P-value Threshold",
+                min_value=0.01,
+                max_value=0.20,
+                value=0.05,
+                step=0.01,
+                key="oos_perm_threshold"
+            )
+            SessionState.update_configuration('validation_out_of_sample_permutation_threshold', oos_perm_threshold)
+
+        # Regime Testing
+        enable_regime = st.checkbox(
+            "Regime Testing",
+            value=st.session_state.get('configuration', {}).get('validation_regime_testing', False),
+            help="Test strategy performance across different market conditions (trending, ranging, volatile)"
+        )
+        SessionState.update_configuration('validation_regime_testing', enable_regime)
+
+    st.markdown("---")
+
+    # Minimum trade requirements
+    st.markdown("### Minimum Trade Requirements")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        min_trades_in = st.number_input(
+            "Min Trades (In-Sample)",
+            min_value=1,
+            max_value=1000,
+            value=st.session_state.get('configuration', {}).get('validation_min_trades_in_sample', 10),
+            help="Minimum number of trades required on training data"
+        )
+        SessionState.update_configuration('validation_min_trades_in_sample', min_trades_in)
+
+    with col2:
+        min_trades_oos = st.number_input(
+            "Min Trades (Out-of-Sample)",
+            min_value=1,
+            max_value=1000,
+            value=st.session_state.get('configuration', {}).get('validation_min_trades_out_of_sample', 5),
+            help="Minimum number of trades required on test data"
+        )
+        SessionState.update_configuration('validation_min_trades_out_of_sample', min_trades_oos)
 
 def render_config_actions():
     """Render configuration action buttons"""
@@ -274,11 +413,11 @@ def render_config_actions():
 
     with col1:
         if st.button("💾 Save Configuration", use_container_width=True):
-            save_current_config()
+            st.session_state['show_save_dialog'] = True
 
     with col2:
         if st.button("📂 Load Configuration", use_container_width=True):
-            load_config_dialog()
+            st.session_state['show_load_dialog'] = True
 
     with col3:
         if st.button("✓ Validate", use_container_width=True):
@@ -290,39 +429,74 @@ def render_config_actions():
             st.success("Configuration cleared")
             st.rerun()
 
-def save_current_config():
-    """Save current configuration as a template"""
-    config = SessionState.get_configuration()
+    # Save dialog
+    if st.session_state.get('show_save_dialog', False):
+        st.markdown("---")
+        st.subheader("💾 Save Configuration")
+        config = SessionState.get_configuration()
 
-    if not config:
-        st.warning("No configuration to save")
-        return
+        if not config:
+            st.warning("No configuration to save")
+            st.session_state['show_save_dialog'] = False
+        else:
+            template_name = st.text_input("Template Name", placeholder="e.g., ES_5m_Standard", key="save_template_name")
 
-    # Simple save dialog
-    with st.form("save_config_form"):
-        template_name = st.text_input("Template Name", placeholder="e.g., ES_5m_Standard")
-        submitted = st.form_submit_button("Save Template")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Save", type="primary", use_container_width=True):
+                    if template_name:
+                        if SessionState.save_template(template_name, config):
+                            st.success(f"Configuration saved as '{template_name}'")
+                            st.session_state['show_save_dialog'] = False
+                            st.rerun()
+                        else:
+                            st.error("Failed to save configuration")
+                    else:
+                        st.warning("Please enter a template name")
 
-        if submitted and template_name:
-            SessionState.save_template(template_name, config)
-            st.success(f"Configuration saved as '{template_name}'")
+            with col2:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state['show_save_dialog'] = False
+                    st.rerun()
 
-def load_config_dialog():
-    """Load configuration from templates"""
-    templates = SessionState.get_all_templates()
+    # Load dialog
+    if st.session_state.get('show_load_dialog', False):
+        st.markdown("---")
+        st.subheader("📂 Load Configuration")
+        templates = SessionState.get_all_templates()
 
-    if not templates:
-        st.info("No saved templates available")
-        return
+        if not templates:
+            st.info("No saved templates available")
+            if st.button("Close"):
+                st.session_state['show_load_dialog'] = False
+                st.rerun()
+        else:
+            template_name = st.selectbox("Select Template", options=list(templates.keys()), key="load_template_name")
 
-    template_name = st.selectbox("Select Template", options=list(templates.keys()))
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("Load", type="primary", use_container_width=True):
+                    config = SessionState.load_template(template_name)
+                    if config:
+                        SessionState.save_configuration(config)
+                        st.success(f"Loaded template '{template_name}'")
+                        st.session_state['show_load_dialog'] = False
+                        st.rerun()
+                    else:
+                        st.error("Failed to load template")
 
-    if st.button("Load Selected Template"):
-        config = SessionState.load_template(template_name)
-        if config:
-            SessionState.save_configuration(config)
-            st.success(f"Loaded template '{template_name}'")
-            st.rerun()
+            with col2:
+                if st.button("Delete", use_container_width=True):
+                    if SessionState.delete_template(template_name):
+                        st.success(f"Deleted template '{template_name}'")
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete template")
+
+            with col3:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state['show_load_dialog'] = False
+                    st.rerun()
 
 def validate_current_config():
     """Validate the current configuration"""

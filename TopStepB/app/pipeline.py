@@ -218,27 +218,69 @@ def orchestrate_pipeline(state: PipelineState) -> Dict[str, Any]:
                 ValidationTestConfig,
             )
 
+            # Build validation config from state settings
             val_config = ValidationConfig()
-            # Always-on core tests
-            CORE_TESTS = {
-                "in_sample",
-                "out_of_sample",
-                "in_sample_permutation",
-                "out_of_sample_permutation",
-            }
-            selected_tests = set(state.validation_tests or [])
-            if "all" in selected_tests:
-                enabled_tests = {
-                    name
-                    for name, cfg in val_config.__dict__.items()
-                    if isinstance(cfg, ValidationTestConfig)
-                }
-            else:
-                enabled_tests = CORE_TESTS | selected_tests
 
-            for name, cfg in val_config.__dict__.items():
-                if isinstance(cfg, ValidationTestConfig):
-                    cfg.enabled = name in enabled_tests
+            # Set minimum trade requirements from UI
+            val_config.min_trades_in_sample = getattr(state, 'validation_min_trades_in_sample', 10)
+            val_config.min_trades_out_of_sample = getattr(state, 'validation_min_trades_out_of_sample', 5)
+
+            # Core tests (always enabled)
+            val_config.in_sample = ValidationTestConfig(enabled=True)
+            val_config.out_of_sample = ValidationTestConfig(enabled=True)
+
+            # In-Sample Permutation Test
+            if getattr(state, 'validation_in_sample_permutation', False):
+                val_config.in_sample_permutation = ValidationTestConfig(
+                    enabled=True,
+                    params={
+                        'permutations': getattr(state, 'validation_in_sample_permutation_count', 1000),
+                        'threshold': getattr(state, 'validation_in_sample_permutation_threshold', 0.05)
+                    }
+                )
+            else:
+                val_config.in_sample_permutation = ValidationTestConfig(enabled=False)
+
+            # Out-of-Sample Permutation Test
+            if getattr(state, 'validation_out_of_sample_permutation', False):
+                val_config.out_of_sample_permutation = ValidationTestConfig(
+                    enabled=True,
+                    params={
+                        'permutations': getattr(state, 'validation_out_of_sample_permutation_count', 1000),
+                        'threshold': getattr(state, 'validation_out_of_sample_permutation_threshold', 0.05)
+                    }
+                )
+            else:
+                val_config.out_of_sample_permutation = ValidationTestConfig(enabled=False)
+
+            # Monte Carlo Simulation
+            if getattr(state, 'validation_monte_carlo', False):
+                val_config.monte_carlo = ValidationTestConfig(
+                    enabled=True,
+                    params={
+                        'simulations': getattr(state, 'validation_monte_carlo_simulations', 100)
+                    }
+                )
+            else:
+                val_config.monte_carlo = ValidationTestConfig(enabled=False)
+
+            # Noise Injection Test
+            if getattr(state, 'validation_noise_injection', False):
+                val_config.noise_injection = ValidationTestConfig(
+                    enabled=True,
+                    params={
+                        'simulations': getattr(state, 'validation_noise_injection_simulations', 100),
+                        'sigma': getattr(state, 'validation_noise_injection_sigma', 0.01)
+                    }
+                )
+            else:
+                val_config.noise_injection = ValidationTestConfig(enabled=False)
+
+            # Regime Testing
+            if getattr(state, 'validation_regime_testing', False):
+                val_config.regime_testing = ValidationTestConfig(enabled=True)
+            else:
+                val_config.regime_testing = ValidationTestConfig(enabled=False)
 
             exec_cfg = {
                 'slippage_ticks': getattr(state, 'slippage_ticks', 0.0),

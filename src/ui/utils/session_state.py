@@ -5,6 +5,8 @@ Handles persistent state across page reloads and navigation
 import streamlit as st
 from typing import Any, Dict, Optional
 from datetime import datetime
+import json
+from pathlib import Path
 
 class SessionState:
     """Manage UI session state across reruns"""
@@ -100,27 +102,89 @@ class SessionState:
         return (st.session_state.get('data_file'), st.session_state.get('synthetic_bars'))
 
     @staticmethod
-    def save_template(name: str, config: Dict[str, Any]):
-        """Save a configuration template"""
-        if 'config_templates' not in st.session_state:
-            st.session_state.config_templates = {}
-        st.session_state.config_templates[name] = config
+    def _get_templates_dir() -> Path:
+        """Get the directory for configuration templates"""
+        templates_dir = Path.home() / ".topstep_backtester" / "config_templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        return templates_dir
+
+    @staticmethod
+    def save_template(name: str, config: Dict[str, Any]) -> bool:
+        """Save a configuration template to disk"""
+        try:
+            templates_dir = SessionState._get_templates_dir()
+            template_file = templates_dir / f"{name}.json"
+
+            with open(template_file, 'w') as f:
+                json.dump(config, f, indent=2, default=str)
+
+            # Also update session state cache
+            if 'config_templates' not in st.session_state:
+                st.session_state.config_templates = {}
+            st.session_state.config_templates[name] = config
+
+            return True
+        except Exception as e:
+            print(f"Error saving template: {e}")
+            return False
 
     @staticmethod
     def load_template(name: str) -> Optional[Dict[str, Any]]:
-        """Load a configuration template"""
-        return st.session_state.get('config_templates', {}).get(name)
+        """Load a configuration template from disk"""
+        try:
+            templates_dir = SessionState._get_templates_dir()
+            template_file = templates_dir / f"{name}.json"
+
+            if not template_file.exists():
+                return None
+
+            with open(template_file, 'r') as f:
+                config = json.load(f)
+
+            return config
+        except Exception as e:
+            print(f"Error loading template: {e}")
+            return None
 
     @staticmethod
     def get_all_templates() -> Dict[str, Dict[str, Any]]:
-        """Get all saved templates"""
-        return st.session_state.get('config_templates', {})
+        """Get all saved templates from disk"""
+        try:
+            templates_dir = SessionState._get_templates_dir()
+            templates = {}
+
+            for template_file in templates_dir.glob("*.json"):
+                name = template_file.stem
+                try:
+                    with open(template_file, 'r') as f:
+                        templates[name] = json.load(f)
+                except Exception as e:
+                    print(f"Error loading template {name}: {e}")
+                    continue
+
+            return templates
+        except Exception as e:
+            print(f"Error getting templates: {e}")
+            return {}
 
     @staticmethod
-    def delete_template(name: str):
+    def delete_template(name: str) -> bool:
         """Delete a configuration template"""
-        if 'config_templates' in st.session_state and name in st.session_state.config_templates:
-            del st.session_state.config_templates[name]
+        try:
+            templates_dir = SessionState._get_templates_dir()
+            template_file = templates_dir / f"{name}.json"
+
+            if template_file.exists():
+                template_file.unlink()
+
+            # Also remove from session state cache
+            if 'config_templates' in st.session_state and name in st.session_state.config_templates:
+                del st.session_state.config_templates[name]
+
+            return True
+        except Exception as e:
+            print(f"Error deleting template: {e}")
+            return False
 
     @staticmethod
     def cache_results(study_name: str, results: Dict[str, Any]):
