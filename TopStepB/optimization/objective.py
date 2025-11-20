@@ -30,6 +30,7 @@ import logging
 import time
 import numpy as np
 import pandas as pd
+from dataclasses import dataclass
 from typing import Dict, Any, List, Callable, Optional, Union, Tuple
 from collections import defaultdict
 import optuna
@@ -43,6 +44,232 @@ from .scorers import CompositeScore
 from .config.optuna_config import OptimizationConfig
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class BarDataView:
+    """Lightweight numpy view over OHLC data for fast bar-by-bar stepping."""
+
+    open: np.ndarray
+    close: np.ndarray
+    dates: List[Any]
+
+
+def _build_bar_data_view(data: pd.DataFrame) -> BarDataView:
+    """Create a cached numpy-backed view from a DataFrame without copying."""
+
+    open_prices = data["open"].to_numpy(dtype=float, copy=False)
+    close_prices = data["close"].to_numpy(dtype=float, copy=False)
+    dates = [idx.date() if hasattr(idx, "date") else idx for idx in data.index]
+    return BarDataView(open=open_prices, close=close_prices, dates=dates)
+
+
+def _ensure_bar_data_view(cache: Dict[int, BarDataView], data: pd.DataFrame) -> BarDataView:
+    """Return a cached :class:`BarDataView`, building it once per DataFrame."""
+
+    key = id(data)
+    if key not in cache:
+        cache[key] = _build_bar_data_view(data)
+    return cache[key]
+
+
+def _zero_trade_metrics() -> Dict[str, float]:
+    """Mathematically accurate metrics for scenarios with zero trades."""
+
+    return {
+        'total_return': 0.0,
+        'sharpe_ratio': 0.0,
+        'sortino_ratio': 0.0,
+        'max_drawdown': 0.0,
+        'profit_factor': 0.0,
+        'win_rate': 0.0,
+        'total_trades': 0,
+        'net_profit': 0.0,
+        'total_dollar_pnl': 0.0,
+        'slippage_cost': 0.0,
+        'commission_cost': 0.0,
+        'daily_pnl_series': [0.0],
+        'equity_curve': [50000.0]
+    }
+
+
+def _run_simplified_backtest_core(
+    signals: pd.Series,
+    view: BarDataView,
+    trading_config: Any,
+    execution_config: Optional[Dict[str, Any]],
+    zero_metrics_fn: Callable[[], Dict[str, float]]
+) -> Dict[str, Any]:
+    """Tight, data-oriented backtest loop that minimizes pandas overhead."""
+
+    try:
+        if signals is None or signals.empty:
+            return {'metrics': zero_metrics_fn()}
+
+        signal_values = np.asarray(signals)
+        length = min(len(signal_values), len(view.open), len(view.close))
+        if length < 2:
+            return {'metrics': zero_metrics_fn()}
+
+        tick_size = float(trading_config.market_spec.tick_size)
+        tick_value = float(trading_config.market_spec.tick_value)
+
+        slippage_cost = 0.0
+        commission_cost = 0.0
+        if execution_config:
+            slippage_cost = execution_config.get('slippage_ticks', 0) * tick_value
+            commission_cost = execution_config.get('commission_per_trade', 0)
+
+        position = 0
+        entry_price = 0.0
+        trades = 0
+        winning_trades = 0
+        total_dollar_pnl = 0.0
+        trade_dollar_pnls: List[float] = []
+        daily_pnl_dict: Dict[Any, float] = {}
+
+        starting_equity = 50000.0
+        current_equity = starting_equity
+        equity_curve_dollars = np.empty(length, dtype=float)
+        equity_curve_dollars[0] = starting_equity
+
+        open_prices = view.open[:length]
+        close_prices = view.close[:length]
+        dates = view.dates[:length]
+
+        for i in range(1, length):
+            current_signal = signal_values[i]
+            if hasattr(current_signal, 'item'):
+                current_signal = current_signal.item()
+            elif not np.isscalar(current_signal):
+                current_signal = int(current_signal)
+
+            assert np.isscalar(current_signal), f"Expected scalar signal, got {type(current_signal)} at i={i}"
+
+            if current_signal != position:
+                if position != 0:
+                    exit_price = open_prices[i]
+                    price_movement = exit_price - entry_price
+                    ticks = price_movement / tick_size
+                    raw_dollar_pnl = ticks * tick_value * abs(position)
+                    if position < 0:
+                        raw_dollar_pnl = -raw_dollar_pnl
+
+                    dollar_pnl = raw_dollar_pnl - slippage_cost - commission_cost
+                    total_dollar_pnl += dollar_pnl
+                    trade_dollar_pnls.append(dollar_pnl)
+                    trades += 1
+                    if dollar_pnl > 0:
+                        winning_trades += 1
+
+                    trade_date = dates[i]
+                    daily_pnl_dict[trade_date] = daily_pnl_dict.get(trade_date, 0.0) + dollar_pnl
+
+                    current_equity += dollar_pnl
+
+                equity_curve_dollars[i] = current_equity
+                position = current_signal
+                if position != 0:
+                    entry_price = open_prices[i]
+            else:
+                equity_curve_dollars[i] = current_equity
+
+        if position != 0 and length > 1:
+            final_exit_price = close_prices[-1]
+            price_movement = final_exit_price - entry_price
+            ticks = price_movement / tick_size
+            raw_dollar_pnl = ticks * tick_value * abs(position)
+            if position < 0:
+                raw_dollar_pnl = -raw_dollar_pnl
+
+            dollar_pnl = raw_dollar_pnl - slippage_cost - commission_cost
+            total_dollar_pnl += dollar_pnl
+            trade_dollar_pnls.append(dollar_pnl)
+            trades += 1
+            if dollar_pnl > 0:
+                winning_trades += 1
+
+            final_date = dates[-1]
+            daily_pnl_dict[final_date] = daily_pnl_dict.get(final_date, 0.0) + dollar_pnl
+
+            current_equity += dollar_pnl
+            equity_curve_dollars[-1] = current_equity
+
+        if not trade_dollar_pnls or len(equity_curve_dollars) < 2:
+            return {'metrics': zero_metrics_fn()}
+
+        total_slippage_cost = 0.0
+        total_commission_cost = 0.0
+        if execution_config and trades > 0:
+            total_slippage_cost = slippage_cost * trades
+            total_commission_cost = commission_cost * trades
+
+        total_return_percentage = (total_dollar_pnl / starting_equity) * 100
+        win_rate = (winning_trades / trades) * 100 if trades > 0 else 0
+
+        returns_decimal = [pnl / starting_equity for pnl in trade_dollar_pnls]
+        returns_array = np.asarray(returns_decimal, dtype=float)
+        if len(returns_array) > 1 and np.std(returns_array) > 0:
+            sharpe_ratio = np.mean(returns_array) / np.std(returns_array)
+            sharpe_ratio = sharpe_ratio * np.sqrt(252)
+        else:
+            sharpe_ratio = 0.0
+
+        equity_array = equity_curve_dollars
+        running_max = np.maximum.accumulate(equity_array)
+        drawdown_dollars = equity_array - running_max
+        max_drawdown_dollars = abs(np.min(drawdown_dollars))
+        max_drawdown_percentage = (max_drawdown_dollars / starting_equity) * 100
+
+        winning_dollar_pnls = [pnl for pnl in trade_dollar_pnls if pnl > 0]
+        losing_dollar_pnls = [pnl for pnl in trade_dollar_pnls if pnl < 0]
+
+        if losing_dollar_pnls and winning_dollar_pnls:
+            profit_factor = sum(winning_dollar_pnls) / abs(sum(losing_dollar_pnls))
+        elif winning_dollar_pnls and not losing_dollar_pnls:
+            profit_factor = 5.0
+        else:
+            profit_factor = 0.1
+
+        negative_returns = [pnl / starting_equity for pnl in trade_dollar_pnls if pnl < 0]
+        if len(negative_returns) > 1:
+            downside_std = np.std(negative_returns)
+            if downside_std > 0:
+                sortino_ratio = np.mean(returns_array) / downside_std * np.sqrt(252)
+            else:
+                sortino_ratio = sharpe_ratio
+        else:
+            sortino_ratio = sharpe_ratio * 1.4
+
+        sorted_dates = sorted(daily_pnl_dict.keys())
+        daily_pnl_series = [daily_pnl_dict.get(date, 0.0) for date in sorted_dates]
+        if not daily_pnl_series:
+            daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
+
+        metrics = {
+            'total_return': total_return_percentage,
+            'sharpe_ratio': sharpe_ratio,
+            'sortino_ratio': sortino_ratio,
+            'max_drawdown': max_drawdown_percentage,
+            'max_drawdown_dollars': max_drawdown_dollars,
+            'win_rate': win_rate,
+            'profit_factor': profit_factor,
+            'total_trades': trades,
+            'net_profit': total_return_percentage,
+            'total_dollar_pnl': total_dollar_pnl,
+            'slippage_cost': total_slippage_cost,
+            'commission_cost': total_commission_cost,
+            'daily_pnl_series': daily_pnl_series,
+            'equity_curve': equity_curve_dollars.tolist(),
+            'pnl': total_return_percentage,
+            'dollar_pnl_for_optimization': total_dollar_pnl
+        }
+
+        return {'metrics': metrics}
+
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Simplified backtest failed: {e}")
+        return {'metrics': zero_metrics_fn()}
 
 
 class StatefulObjective:
@@ -88,7 +315,13 @@ class StatefulObjective:
         self.config = config
         # Force CPU-only execution
         self.device = "cpu"
-        
+
+        # Cache numpy views of validation data to avoid per-trial DataFrame slicing
+        self._bar_data_cache: Dict[int, BarDataView] = {}
+        for access in authorized_accesses:
+            if access.validation_data is not None and not access.validation_data.empty:
+                _ensure_bar_data_view(self._bar_data_cache, access.validation_data)
+
         # Store logger reference for trial execution
         self._logger = logging.getLogger(__name__)
         
@@ -150,6 +383,11 @@ class StatefulObjective:
                 return float('-inf')  # Return worst possible score
             else:
                 raise
+
+    def _get_bar_data_view(self, data: pd.DataFrame) -> BarDataView:
+        """Fetch (or build) cached bar data view for a validation split."""
+
+        return _ensure_bar_data_view(self._bar_data_cache, data)
     
     def _evaluate_trial(self,
                        trial: Trial,
@@ -628,12 +866,14 @@ class StatefulObjective:
             
             # Step 3: Evaluate performance using validate_data signals and validate_data prices
             # This ensures true out-of-sample evaluation: parameters proven on optimize_data, applied to validate_data
+            validate_view = self._get_bar_data_view(validate_data)
             backtest_result = self._run_simplified_backtest(
                 strategy_instance=strategy_instance,
                 signals=validate_signals,  # Generated from validate_data
                 data=validate_data,  # Price data matches signal data
                 trading_config=trading_config,
-                execution_config=execution_config  # Pass execution costs to avoid double-counting
+                execution_config=execution_config,  # Pass execution costs to avoid double-counting
+                cached_view=validate_view,
             )
             
             if backtest_result is None or not backtest_result.get('metrics'):
@@ -778,271 +1018,27 @@ class StatefulObjective:
                                signals: pd.Series,
                                data: pd.DataFrame,
                                trading_config: Any,
-                               execution_config: Dict[str, Any] = None) -> Dict[str, Any]:
+                               execution_config: Dict[str, Any] = None,
+                               cached_view: Optional[BarDataView] = None) -> Dict[str, Any]:
         """
-        Run simplified backtest with FIXED futures P&L calculation
-        
-        CRITICAL FIX: Eliminates double-scaling bug by working with actual dollar amounts
-        throughout the calculation, only converting to percentage at the end.
-        
-        Args:
-            strategy_instance: Orchestrated strategy instance
-            signals: Trading signals from strategy
-            data: Price data
-            trading_config: Orchestrated trading configuration
-            
-        Returns:
-            Dictionary with backtest metrics
+        Run simplified backtest using cached numpy views for faster stepping.
         """
-        try:
-            # Simple backtest implementation
-            if signals is None or signals.empty:
-                return {'metrics': self._get_zero_trade_metrics()}
-            
-            # Calculate basic performance metrics
-            position = 0
-            trades = 0
-            winning_trades = 0
-            entry_price = 0.0
-            
-            # FIXED: Track actual dollar P&L instead of percentage returns
-            total_dollar_pnl = 0.0  # Accumulate actual dollar profit/loss
-            trade_dollar_pnls = []  # Store individual trade P&L for statistics
-            
-            # CRITICAL FIX: Track daily P&L for viability scoring
-            daily_pnl_dict = {}  # Date -> daily P&L accumulation
-            
-            # Track equity curve in dollar terms for drawdown calculation
-            # INSTITUTIONAL FIX: Remove hardcoded account equity from optimization calculations
-            starting_equity = 50000.0  # TopStep account starting equity (REPORTING ONLY)
-            equity_curve_dollars = [starting_equity]
-            current_equity = starting_equity
-            
-            for i in range(1, len(signals)):
-                # CRITICAL FIX: Ensure scalar extraction for Series to prevent array boolean error
-                current_signal = signals.iloc[i]
-                
-                # Convert to Python scalar if it's a numpy scalar or array
-                if hasattr(current_signal, 'item'):
-                    current_signal = current_signal.item()
-                elif not np.isscalar(current_signal):
-                    current_signal = int(current_signal)
-                
-                # Safety validation to ensure scalar value
-                assert np.isscalar(current_signal), f"Expected scalar signal, got {type(current_signal)} at i={i}"
-                
-                if current_signal != position:
-                    # Position change detected
-                    
-                    if position != 0:
-                        # Close existing position - use open price of current bar
-                        exit_price = data['open'].iloc[i]
-                        
-                        # FIXED: Use proper futures tick-based calculation - NO DOUBLE SCALING
-                        price_movement = exit_price - entry_price
-                        ticks = price_movement / float(trading_config.market_spec.tick_size)
-                        raw_dollar_pnl = ticks * float(trading_config.market_spec.tick_value) * abs(position)
-                        if position < 0:  # Short position
-                            raw_dollar_pnl = -raw_dollar_pnl
-                        
-                        # FIXED: Apply execution costs directly here to avoid double-counting
-                        dollar_pnl = raw_dollar_pnl
-                        if execution_config:
-                            # Apply slippage cost per trade
-                            slippage_cost = (execution_config.get('slippage_ticks', 0) * 
-                                           float(trading_config.market_spec.tick_value))
-                            
-                            # Apply commission cost per trade
-                            commission_cost = execution_config.get('commission_per_trade', 0)
-                            
-                            # Subtract costs from the trade P&L
-                            dollar_pnl = raw_dollar_pnl - slippage_cost - commission_cost
-                        
-                        # Accumulate actual dollar amounts with costs already applied
-                        total_dollar_pnl += dollar_pnl
-                        trade_dollar_pnls.append(dollar_pnl)
-                        trades += 1
-                        if dollar_pnl > 0:
-                            winning_trades += 1
-                        
-                        # CRITICAL FIX: Accumulate daily P&L by date for viability scoring
-                        trade_date = data.index[i].date() if hasattr(data.index[i], 'date') else str(data.index[i])
-                        daily_pnl_dict[trade_date] = daily_pnl_dict.get(trade_date, 0.0) + dollar_pnl
-                        
-                        # Update equity curve in dollars
-                        current_equity += dollar_pnl
-                        equity_curve_dollars.append(current_equity)
-                    else:
-                        # No previous position to close
-                        equity_curve_dollars.append(current_equity)
-                    
-                    # Update position and record entry price if going long/short
-                    position = current_signal
-                    if position != 0:
-                        entry_price = data['open'].iloc[i]  # Enter at open of current bar
-                        
-                else:
-                    # No position change, equity stays same
-                    equity_curve_dollars.append(current_equity)
-            
-            # Close final position if still open at end
-            if position != 0 and len(data) > 1:
-                # Close at the last available price (use close of last bar)
-                final_exit_price = data['close'].iloc[-1]
-                
-                # FIXED: Use proper futures tick-based calculation - NO DOUBLE SCALING
-                price_movement = final_exit_price - entry_price
-                ticks = price_movement / float(trading_config.market_spec.tick_size)
-                raw_dollar_pnl = ticks * float(trading_config.market_spec.tick_value) * abs(position)
-                if position < 0:  # Short position
-                    raw_dollar_pnl = -raw_dollar_pnl
-                
-                # FIXED: Apply execution costs directly here to avoid double-counting
-                dollar_pnl = raw_dollar_pnl
-                if execution_config:
-                    # Apply slippage cost per trade
-                    slippage_cost = (execution_config.get('slippage_ticks', 0) * 
-                                   float(trading_config.market_spec.tick_value))
-                    
-                    # Apply commission cost per trade
-                    commission_cost = execution_config.get('commission_per_trade', 0)
-                    
-                    # Subtract costs from the trade P&L
-                    dollar_pnl = raw_dollar_pnl - slippage_cost - commission_cost
-                
-                # Accumulate actual dollar amounts with costs already applied
-                total_dollar_pnl += dollar_pnl
-                trade_dollar_pnls.append(dollar_pnl)
-                trades += 1
-                if dollar_pnl > 0:
-                    winning_trades += 1
-                
-                # CRITICAL FIX: Accumulate daily P&L by date for viability scoring
-                final_date = data.index[-1].date() if hasattr(data.index[-1], 'date') else str(data.index[-1])
-                daily_pnl_dict[final_date] = daily_pnl_dict.get(final_date, 0.0) + dollar_pnl
-                
-                # Final equity update in dollars
-                current_equity += dollar_pnl
-                equity_curve_dollars.append(current_equity)
-            
-            # INSTITUTIONAL COMPLIANCE FIX: Calculate metrics from tick-based dollar amounts
-            if trade_dollar_pnls and len(equity_curve_dollars) > 1:
-                # Calculate execution cost totals for institutional reporting
-                total_slippage_cost = 0.0
-                total_commission_cost = 0.0
-                if execution_config and trades > 0:
-                    slippage_per_trade = (execution_config.get('slippage_ticks', 0) * 
-                                        float(trading_config.market_spec.tick_value))
-                    commission_per_trade = execution_config.get('commission_per_trade', 0)
-                    total_slippage_cost = slippage_per_trade * trades
-                    total_commission_cost = commission_per_trade * trades
-                
-                # INSTITUTIONAL FIX: Keep dollar PNL as primary metric, percentage for reporting only
-                total_return_percentage = (total_dollar_pnl / starting_equity) * 100  # REPORTING ONLY
-                win_rate = (winning_trades / trades) * 100 if trades > 0 else 0
-                
-                # INSTITUTIONAL FIX: Calculate Sharpe ratio using raw dollar returns (no equity scaling)
-                # For optimization, use dollar-based returns to eliminate account size dependency
-                returns_decimal = [pnl / starting_equity for pnl in trade_dollar_pnls]  # REPORTING ONLY
-                returns_array = np.array(returns_decimal)
-                if len(returns_array) > 1 and np.std(returns_array) > 0:
-                    sharpe_ratio = np.mean(returns_array) / np.std(returns_array)
-                    # Annualize assuming daily data (252 trading days)
-                    sharpe_ratio = sharpe_ratio * np.sqrt(252)
-                else:
-                    sharpe_ratio = 0.0
-                
-                # Calculate drawdown from dollar equity curve
-                equity_array = np.array(equity_curve_dollars)
-                running_max = np.maximum.accumulate(equity_array)
-                drawdown_dollars = equity_array - running_max
-                max_drawdown_dollars = abs(np.min(drawdown_dollars))
-                max_drawdown_percentage = (max_drawdown_dollars / starting_equity) * 100  # REPORTING ONLY
-                
-                # Calculate profit factor using dollar amounts
-                winning_dollar_pnls = [pnl for pnl in trade_dollar_pnls if pnl > 0]
-                losing_dollar_pnls = [pnl for pnl in trade_dollar_pnls if pnl < 0]
-                
-                if losing_dollar_pnls and winning_dollar_pnls:
-                    # Profit factor = gross profit / gross loss
-                    gross_profit = sum(winning_dollar_pnls)
-                    gross_loss = abs(sum(losing_dollar_pnls))  # Make positive
-                    profit_factor = gross_profit / gross_loss
-                elif winning_dollar_pnls and not losing_dollar_pnls:
-                    # All trades profitable - use high but bounded value
-                    profit_factor = 5.0
-                else:
-                    # No profitable trades or no trades at all
-                    profit_factor = 0.1
-                
-                # INSTITUTIONAL FIX: Calculate Sortino ratio using raw dollar returns (no equity scaling)
-                negative_returns = [pnl / starting_equity for pnl in trade_dollar_pnls if pnl < 0]  # REPORTING ONLY
-                if len(negative_returns) > 1:
-                    downside_std = np.std(negative_returns)
-                    if downside_std > 0:
-                        sortino_ratio = np.mean(returns_array) / downside_std * np.sqrt(252)
-                    else:
-                        sortino_ratio = sharpe_ratio
-                else:
-                    sortino_ratio = sharpe_ratio * 1.4  # Approximation if insufficient data
-                
-                # Create daily P&L series for prop firm viability scoring
-                sorted_dates = sorted(daily_pnl_dict.keys())
-                daily_pnl_series = [daily_pnl_dict.get(date, 0.0) for date in sorted_dates]
-                
-                # If no trades, create minimal daily series to prevent errors
-                if not daily_pnl_series:
-                    daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
-                
-                # INSTITUTIONAL COMPLIANCE: Comprehensive tick-based metrics
-                metrics = {
-                    'total_return': total_return_percentage,
-                    'sharpe_ratio': sharpe_ratio,
-                    'sortino_ratio': sortino_ratio,
-                    'max_drawdown': max_drawdown_percentage,  # REPORTING ONLY
-                    'max_drawdown_dollars': max_drawdown_dollars,  # INSTITUTIONAL FIX: Dollar-based drawdown for optimization
-                    'win_rate': win_rate,
-                    'profit_factor': profit_factor,
-                    'total_trades': trades,
-                    'net_profit': total_return_percentage,
-                    'total_dollar_pnl': total_dollar_pnl,  # Tick-based dollar amount (net of costs)
-                    'slippage_cost': total_slippage_cost,   # NEW: For institutional reporting
-                    'commission_cost': total_commission_cost, # NEW: For institutional reporting
-                    'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
-                    'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
-                    'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
-                }
-            else:
-                metrics = self._get_zero_trade_metrics()
-            
-            return {'metrics': metrics}
-            
-        except Exception as e:
-            self._logger.warning(f"Simplified backtest failed: {e}")
-            return {'metrics': self._get_zero_trade_metrics()}
+
+        view = cached_view or self._get_bar_data_view(data)
+        return _run_simplified_backtest_core(
+            signals=signals,
+            view=view,
+            trading_config=trading_config,
+            execution_config=execution_config,
+            zero_metrics_fn=self._get_zero_trade_metrics,
+        )
     
     def _get_zero_trade_metrics(self) -> Dict[str, float]:
         """
         PURE DISCOVERY PRINCIPLE: Return mathematically accurate metrics for zero-trade scenarios.
         NO DEFAULTS, NO PENALTIES, NO ARTIFICIAL VALUES - Only mathematical truth.
         """
-        return {
-            'total_return': 0.0,        # 0 trades = 0% return (mathematical fact)
-            'sharpe_ratio': 0.0,        # 0 trades = 0 sharpe (mathematical fact)  
-            'sortino_ratio': 0.0,       # 0 trades = 0 sortino (mathematical fact)
-            'pnl': 0.0,                 # 0 trades = 0 PNL (mathematical fact)
-            'max_drawdown': 0.0,        # 0 trades = 0% drawdown (mathematical fact)
-            'profit_factor': 0.0,       # 0 trades = 0 profit factor (mathematical fact)
-            'win_rate': 0.0,            # 0 trades = 0% win rate (mathematical fact)
-            'total_trades': 0,          # No trades generated (mathematical fact)
-            'net_profit': 0.0,          # 0 trades = 0 net profit (mathematical fact)
-            'total_dollar_pnl': 0.0,    # 0 trades = $0 PNL (mathematical fact)
-            'slippage_cost': 0.0,       # 0 trades = $0 slippage (mathematical fact)
-            'commission_cost': 0.0,     # 0 trades = $0 commission (mathematical fact)
-            'daily_pnl_series': [0.0],  # 0 trades = flat zero series (mathematical fact)
-            'equity_curve': [50000.0]   # 0 trades = flat starting equity (mathematical fact)
-        }
+        return _zero_trade_metrics()
     
     def _calculate_additional_metrics(self, 
                                     metrics: Dict[str, float], 
@@ -1119,7 +1115,10 @@ class ObjectiveFactory:
             weights=config.score_weights,
             bounds=config.metric_bounds
         )
-        
+
+        # Cache bar data views when running direct factory tests without StatefulObjective
+        self._bar_data_cache: Dict[int, BarDataView] = {}
+
         logging.getLogger(__name__).info(f"ObjectiveFactory initialized with config: "
                    f"max_trials={config.limits.max_trials}, "
                    f"timeout={config.limits.timeout_per_trial}s")
@@ -1178,7 +1177,7 @@ class ObjectiveFactory:
         
         logging.getLogger(__name__).info(f"Creating StatefulObjective for {strategy_instance.strategy_name} "
                    f"with {len(authorized_accesses)} authorized data accesses and {len(parameter_ranges)} parameters")
-        
+
         # PERFORMANCE FIX: Return StatefulObjective instead of closure
         return StatefulObjective(
             strategy_class=strategy_class,
@@ -1189,6 +1188,11 @@ class ObjectiveFactory:
             composite_scorer=composite_scorer,
             config=self.config
         )
+
+    def _get_bar_data_view(self, data: pd.DataFrame) -> BarDataView:
+        """Fetch (or build) cached bar data view for a validation split."""
+
+        return _ensure_bar_data_view(self._bar_data_cache, data)
     
     def _evaluate_trial(self,
                        trial: Trial,
@@ -1731,12 +1735,14 @@ class ObjectiveFactory:
             
             # Step 3: Evaluate performance using validate_data signals and validate_data prices
             # This ensures true out-of-sample evaluation: parameters proven on optimize_data, applied to validate_data
+            validate_view = self._get_bar_data_view(validate_data)
             backtest_result = self._run_simplified_backtest(
                 strategy_instance=strategy_instance,
                 signals=validate_signals,  # Generated from validate_data
                 data=validate_data,  # Price data matches signal data
                 trading_config=trading_config,
-                execution_config=execution_config  # Pass execution costs to avoid double-counting
+                execution_config=execution_config,  # Pass execution costs to avoid double-counting
+                cached_view=validate_view,
             )
             
             if backtest_result is None or not backtest_result.get('metrics'):
@@ -1769,271 +1775,27 @@ class ObjectiveFactory:
                                signals: pd.Series,
                                data: pd.DataFrame,
                                trading_config: Any,
-                               execution_config: Dict[str, Any] = None) -> Dict[str, Any]:
+                               execution_config: Dict[str, Any] = None,
+                               cached_view: Optional[BarDataView] = None) -> Dict[str, Any]:
         """
-        Run simplified backtest with FIXED futures P&L calculation
-        
-        CRITICAL FIX: Eliminates double-scaling bug by working with actual dollar amounts
-        throughout the calculation, only converting to percentage at the end.
-        
-        Args:
-            strategy_instance: Orchestrated strategy instance
-            signals: Trading signals from strategy
-            data: Price data
-            trading_config: Orchestrated trading configuration
-            
-        Returns:
-            Dictionary with backtest metrics
+        Run simplified backtest using cached numpy views for faster stepping.
         """
-        try:
-            # Simple backtest implementation
-            if signals is None or signals.empty:
-                return {'metrics': self._get_zero_trade_metrics()}
-            
-            # Calculate basic performance metrics
-            position = 0
-            trades = 0
-            winning_trades = 0
-            entry_price = 0.0
-            
-            # FIXED: Track actual dollar P&L instead of percentage returns
-            total_dollar_pnl = 0.0  # Accumulate actual dollar profit/loss
-            trade_dollar_pnls = []  # Store individual trade P&L for statistics
-            
-            # CRITICAL FIX: Track daily P&L for viability scoring
-            daily_pnl_dict = {}  # Date -> daily P&L accumulation
-            
-            # Track equity curve in dollar terms for drawdown calculation
-            # INSTITUTIONAL FIX: Remove hardcoded account equity from optimization calculations
-            starting_equity = 50000.0  # TopStep account starting equity (REPORTING ONLY)
-            equity_curve_dollars = [starting_equity]
-            current_equity = starting_equity
-            
-            for i in range(1, len(signals)):
-                # CRITICAL FIX: Ensure scalar extraction for Series to prevent array boolean error
-                current_signal = signals.iloc[i]
-                
-                # Convert to Python scalar if it's a numpy scalar or array
-                if hasattr(current_signal, 'item'):
-                    current_signal = current_signal.item()
-                elif not np.isscalar(current_signal):
-                    current_signal = int(current_signal)
-                
-                # Safety validation to ensure scalar value
-                assert np.isscalar(current_signal), f"Expected scalar signal, got {type(current_signal)} at i={i}"
-                
-                if current_signal != position:
-                    # Position change detected
-                    
-                    if position != 0:
-                        # Close existing position - use open price of current bar
-                        exit_price = data['open'].iloc[i]
-                        
-                        # FIXED: Use proper futures tick-based calculation - NO DOUBLE SCALING
-                        price_movement = exit_price - entry_price
-                        ticks = price_movement / float(trading_config.market_spec.tick_size)
-                        raw_dollar_pnl = ticks * float(trading_config.market_spec.tick_value) * abs(position)
-                        if position < 0:  # Short position
-                            raw_dollar_pnl = -raw_dollar_pnl
-                        
-                        # FIXED: Apply execution costs directly here to avoid double-counting
-                        dollar_pnl = raw_dollar_pnl
-                        if execution_config:
-                            # Apply slippage cost per trade
-                            slippage_cost = (execution_config.get('slippage_ticks', 0) * 
-                                           float(trading_config.market_spec.tick_value))
-                            
-                            # Apply commission cost per trade
-                            commission_cost = execution_config.get('commission_per_trade', 0)
-                            
-                            # Subtract costs from the trade P&L
-                            dollar_pnl = raw_dollar_pnl - slippage_cost - commission_cost
-                        
-                        # Accumulate actual dollar amounts with costs already applied
-                        total_dollar_pnl += dollar_pnl
-                        trade_dollar_pnls.append(dollar_pnl)
-                        trades += 1
-                        if dollar_pnl > 0:
-                            winning_trades += 1
-                        
-                        # CRITICAL FIX: Accumulate daily P&L by date for viability scoring
-                        trade_date = data.index[i].date() if hasattr(data.index[i], 'date') else str(data.index[i])
-                        daily_pnl_dict[trade_date] = daily_pnl_dict.get(trade_date, 0.0) + dollar_pnl
-                        
-                        # Update equity curve in dollars
-                        current_equity += dollar_pnl
-                        equity_curve_dollars.append(current_equity)
-                    else:
-                        # No previous position to close
-                        equity_curve_dollars.append(current_equity)
-                    
-                    # Update position and record entry price if going long/short
-                    position = current_signal
-                    if position != 0:
-                        entry_price = data['open'].iloc[i]  # Enter at open of current bar
-                        
-                else:
-                    # No position change, equity stays same
-                    equity_curve_dollars.append(current_equity)
-            
-            # Close final position if still open at end
-            if position != 0 and len(data) > 1:
-                # Close at the last available price (use close of last bar)
-                final_exit_price = data['close'].iloc[-1]
-                
-                # FIXED: Use proper futures tick-based calculation - NO DOUBLE SCALING
-                price_movement = final_exit_price - entry_price
-                ticks = price_movement / float(trading_config.market_spec.tick_size)
-                raw_dollar_pnl = ticks * float(trading_config.market_spec.tick_value) * abs(position)
-                if position < 0:  # Short position
-                    raw_dollar_pnl = -raw_dollar_pnl
-                
-                # FIXED: Apply execution costs directly here to avoid double-counting
-                dollar_pnl = raw_dollar_pnl
-                if execution_config:
-                    # Apply slippage cost per trade
-                    slippage_cost = (execution_config.get('slippage_ticks', 0) * 
-                                   float(trading_config.market_spec.tick_value))
-                    
-                    # Apply commission cost per trade
-                    commission_cost = execution_config.get('commission_per_trade', 0)
-                    
-                    # Subtract costs from the trade P&L
-                    dollar_pnl = raw_dollar_pnl - slippage_cost - commission_cost
-                
-                # Accumulate actual dollar amounts with costs already applied
-                total_dollar_pnl += dollar_pnl
-                trade_dollar_pnls.append(dollar_pnl)
-                trades += 1
-                if dollar_pnl > 0:
-                    winning_trades += 1
-                
-                # CRITICAL FIX: Accumulate daily P&L by date for viability scoring
-                final_date = data.index[-1].date() if hasattr(data.index[-1], 'date') else str(data.index[-1])
-                daily_pnl_dict[final_date] = daily_pnl_dict.get(final_date, 0.0) + dollar_pnl
-                
-                # Final equity update in dollars
-                current_equity += dollar_pnl
-                equity_curve_dollars.append(current_equity)
-            
-            # INSTITUTIONAL COMPLIANCE FIX: Calculate metrics from tick-based dollar amounts
-            if trade_dollar_pnls and len(equity_curve_dollars) > 1:
-                # Calculate execution cost totals for institutional reporting
-                total_slippage_cost = 0.0
-                total_commission_cost = 0.0
-                if execution_config and trades > 0:
-                    slippage_per_trade = (execution_config.get('slippage_ticks', 0) * 
-                                        float(trading_config.market_spec.tick_value))
-                    commission_per_trade = execution_config.get('commission_per_trade', 0)
-                    total_slippage_cost = slippage_per_trade * trades
-                    total_commission_cost = commission_per_trade * trades
-                
-                # INSTITUTIONAL FIX: Keep dollar PNL as primary metric, percentage for reporting only
-                total_return_percentage = (total_dollar_pnl / starting_equity) * 100  # REPORTING ONLY
-                win_rate = (winning_trades / trades) * 100 if trades > 0 else 0
-                
-                # INSTITUTIONAL FIX: Calculate Sharpe ratio using raw dollar returns (no equity scaling)
-                # For optimization, use dollar-based returns to eliminate account size dependency
-                returns_decimal = [pnl / starting_equity for pnl in trade_dollar_pnls]  # REPORTING ONLY
-                returns_array = np.array(returns_decimal)
-                if len(returns_array) > 1 and np.std(returns_array) > 0:
-                    sharpe_ratio = np.mean(returns_array) / np.std(returns_array)
-                    # Annualize assuming daily data (252 trading days)
-                    sharpe_ratio = sharpe_ratio * np.sqrt(252)
-                else:
-                    sharpe_ratio = 0.0
-                
-                # Calculate drawdown from dollar equity curve
-                equity_array = np.array(equity_curve_dollars)
-                running_max = np.maximum.accumulate(equity_array)
-                drawdown_dollars = equity_array - running_max
-                max_drawdown_dollars = abs(np.min(drawdown_dollars))
-                max_drawdown_percentage = (max_drawdown_dollars / starting_equity) * 100  # REPORTING ONLY
-                
-                # Calculate profit factor using dollar amounts
-                winning_dollar_pnls = [pnl for pnl in trade_dollar_pnls if pnl > 0]
-                losing_dollar_pnls = [pnl for pnl in trade_dollar_pnls if pnl < 0]
-                
-                if losing_dollar_pnls and winning_dollar_pnls:
-                    # Profit factor = gross profit / gross loss
-                    gross_profit = sum(winning_dollar_pnls)
-                    gross_loss = abs(sum(losing_dollar_pnls))  # Make positive
-                    profit_factor = gross_profit / gross_loss
-                elif winning_dollar_pnls and not losing_dollar_pnls:
-                    # All trades profitable - use high but bounded value
-                    profit_factor = 5.0
-                else:
-                    # No profitable trades or no trades at all
-                    profit_factor = 0.1
-                
-                # INSTITUTIONAL FIX: Calculate Sortino ratio using raw dollar returns (no equity scaling)
-                negative_returns = [pnl / starting_equity for pnl in trade_dollar_pnls if pnl < 0]  # REPORTING ONLY
-                if len(negative_returns) > 1:
-                    downside_std = np.std(negative_returns)
-                    if downside_std > 0:
-                        sortino_ratio = np.mean(returns_array) / downside_std * np.sqrt(252)
-                    else:
-                        sortino_ratio = sharpe_ratio
-                else:
-                    sortino_ratio = sharpe_ratio * 1.4  # Approximation if insufficient data
-                
-                # Create daily P&L series for prop firm viability scoring
-                sorted_dates = sorted(daily_pnl_dict.keys())
-                daily_pnl_series = [daily_pnl_dict.get(date, 0.0) for date in sorted_dates]
-                
-                # If no trades, create minimal daily series to prevent errors
-                if not daily_pnl_series:
-                    daily_pnl_series = [0.0] * min(len(equity_curve_dollars), 10)
-                
-                # INSTITUTIONAL COMPLIANCE: Comprehensive tick-based metrics
-                metrics = {
-                    'total_return': total_return_percentage,
-                    'sharpe_ratio': sharpe_ratio,
-                    'sortino_ratio': sortino_ratio,
-                    'max_drawdown': max_drawdown_percentage,  # REPORTING ONLY
-                    'max_drawdown_dollars': max_drawdown_dollars,  # INSTITUTIONAL FIX: Dollar-based drawdown for optimization
-                    'win_rate': win_rate,
-                    'profit_factor': profit_factor,
-                    'total_trades': trades,
-                    'net_profit': total_return_percentage,
-                    'total_dollar_pnl': total_dollar_pnl,  # Tick-based dollar amount (net of costs)
-                    'slippage_cost': total_slippage_cost,   # NEW: For institutional reporting
-                    'commission_cost': total_commission_cost, # NEW: For institutional reporting
-                    'daily_pnl_series': daily_pnl_series,  # For prop firm viability scoring
-                    'equity_curve': equity_curve_dollars,  # Absolute dollars for viability scoring
-                    'pnl': total_return_percentage,  # Legacy compatibility (REPORTING ONLY)
-                    'dollar_pnl_for_optimization': total_dollar_pnl  # INSTITUTIONAL FIX: Pure dollar-based PNL for optimization
-                }
-            else:
-                metrics = self._get_zero_trade_metrics()
-            
-            return {'metrics': metrics}
-            
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"Simplified backtest failed: {e}")
-            return {'metrics': self._get_zero_trade_metrics()}
-    
+
+        view = cached_view or self._get_bar_data_view(data)
+        return _run_simplified_backtest_core(
+            signals=signals,
+            view=view,
+            trading_config=trading_config,
+            execution_config=execution_config,
+            zero_metrics_fn=self._get_zero_trade_metrics,
+        )
+
     def _get_zero_trade_metrics(self) -> Dict[str, float]:
         """
         PURE DISCOVERY PRINCIPLE: Return mathematically accurate metrics for zero-trade scenarios.
         NO DEFAULTS, NO PENALTIES, NO ARTIFICIAL VALUES - Only mathematical truth.
         """
-        return {
-            'total_return': 0.0,        # 0 trades = 0% return (mathematical fact)
-            'sharpe_ratio': 0.0,        # 0 trades = 0 sharpe (mathematical fact)  
-            'sortino_ratio': 0.0,       # 0 trades = 0 sortino (mathematical fact)
-            'pnl': 0.0,                 # 0 trades = 0 PNL (mathematical fact)
-            'max_drawdown': 0.0,        # 0 trades = 0% drawdown (mathematical fact)
-            'profit_factor': 0.0,       # 0 trades = 0 profit factor (mathematical fact)
-            'win_rate': 0.0,            # 0 trades = 0% win rate (mathematical fact)
-            'total_trades': 0,          # No trades generated (mathematical fact)
-            'net_profit': 0.0,          # 0 trades = 0 net profit (mathematical fact)
-            'total_dollar_pnl': 0.0,    # 0 trades = $0 PNL (mathematical fact)
-            'slippage_cost': 0.0,       # 0 trades = $0 slippage (mathematical fact)
-            'commission_cost': 0.0,     # 0 trades = $0 commission (mathematical fact)
-            'daily_pnl_series': [0.0],  # 0 trades = flat zero series (mathematical fact)
-            'equity_curve': [50000.0]   # 0 trades = flat starting equity (mathematical fact)
-        }
+        return _zero_trade_metrics()
     
     def _calculate_additional_metrics(self, 
                                     metrics: Dict[str, float], 
