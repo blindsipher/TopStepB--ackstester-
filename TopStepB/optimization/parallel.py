@@ -230,7 +230,7 @@ class ParallelOptimizer:
                 n_jobs=n_jobs,
                 timeout=timeout,
                 callbacks=callbacks or [],
-                gc_after_trial=True,
+                gc_after_trial=self.config.limits.gc_after_trial,
                 show_progress_bar=False
             )
             
@@ -263,7 +263,7 @@ class ParallelOptimizer:
                 n_trials=n_trials,
                 timeout=timeout,
                 callbacks=callbacks or [],
-                gc_after_trial=True
+                gc_after_trial=self.config.limits.gc_after_trial
             )
             
             return {
