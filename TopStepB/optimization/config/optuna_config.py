@@ -169,6 +169,9 @@ class OptimizationLimits:
     # Memory limit per trial (MB) - Conservative 1500MB per worker
     memory_limit_mb: int = 1500
 
+    # Enable Python garbage collection after each trial to cap RAM growth
+    gc_after_trial: bool = True
+
     # CPU cores to use (0 = auto-detect)
     max_workers: int = 0
 
@@ -324,6 +327,7 @@ class OptimizationConfig:
                 'results_top_n': self.limits.results_top_n,
                 'max_workers': self.limits.max_workers,
                 'minimum_trades_threshold': self.limits.minimum_trades_threshold,
+                'gc_after_trial': self.limits.gc_after_trial,
                 'gpu_device_ids': self.limits.gpu_device_ids,
                 'gpu_memory_limit_mb': self.limits.gpu_memory_limit_mb,
             }

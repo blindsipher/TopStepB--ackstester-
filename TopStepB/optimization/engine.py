@@ -393,7 +393,8 @@ class OptunaEngine:
                     objective_function,
                     n_trials=self.config.limits.max_trials,
                     timeout=self.config.limits.max_optimization_time,
-                    callbacks=[self._checkpoint_callback]
+                    callbacks=[self._checkpoint_callback],
+                    gc_after_trial=self.config.limits.gc_after_trial
                 )
             
             return {'success': True}
@@ -439,14 +440,16 @@ class OptunaEngine:
     def _process_optimization_results(self, state: PipelineState, study_paths: Dict[str, Path]) -> Dict[str, Any]:
         """Process optimization results and export for deployment modules"""
         try:
-            if not self.study.trials:
+            trials = self.study.get_trials(deepcopy=False)
+
+            if not trials:
                 return self._create_error_result("No trials completed")
-            
+
             # Get top trials based on composite score
-            n_results = min(self.config.limits.results_top_n, len(self.study.trials))
-            
+            n_results = min(self.config.limits.results_top_n, len(trials))
+
             # Filter valid trials (not pruned or failed)
-            valid_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            valid_trials = [t for t in trials if t.state == optuna.trial.TrialState.COMPLETE]
             
             if not valid_trials:
                 return self._create_error_result("No valid trials completed")
@@ -484,10 +487,10 @@ class OptunaEngine:
                     'strategy_name': state.strategy_name,
                     'symbol': state.symbol,
                     'timeframe': state.timeframe,
-                    'total_trials': len(self.study.trials),
+                    'total_trials': len(trials),
                     'valid_trials': len(valid_trials),
-                    'pruned_trials': len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED]),
-                    'failed_trials': len([t for t in self.study.trials if t.state == optuna.trial.TrialState.FAIL]),
+                    'pruned_trials': len([t for t in trials if t.state == optuna.trial.TrialState.PRUNED]),
+                    'failed_trials': len([t for t in trials if t.state == optuna.trial.TrialState.FAIL]),
                     'best_score': self.study.best_value,
                     'optimization_time': time.time() - self.start_time,
                     'configuration': self.config.to_dict()
