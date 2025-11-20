@@ -42,7 +42,17 @@ from optuna.trial import Trial
 from .scorers import CompositeScore
 from .config.optuna_config import OptimizationConfig
 
+# Import vectorized backtest engine (optional - falls back if not available)
+try:
+    from .vectorized_backtest import run_vectorized_backtest
+    VECTORIZED_BACKTEST_AVAILABLE = True
+except ImportError:
+    VECTORIZED_BACKTEST_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+# Feature flag: Set to True to enable vectorized backtest (3-5x faster)
+USE_VECTORIZED_BACKTEST = True
 
 
 class StatefulObjective:
@@ -795,7 +805,11 @@ class StatefulObjective:
             Dictionary with backtest metrics
         """
         try:
-            # Simple backtest implementation
+            # Use vectorized Numba-compiled backtest if available and enabled (3-5x faster)
+            if USE_VECTORIZED_BACKTEST and VECTORIZED_BACKTEST_AVAILABLE:
+                return run_vectorized_backtest(signals, data, trading_config, execution_config)
+
+            # Fall back to original Python loop implementation
             if signals is None or signals.empty:
                 return {'metrics': self._get_zero_trade_metrics()}
             
@@ -1786,7 +1800,11 @@ class ObjectiveFactory:
             Dictionary with backtest metrics
         """
         try:
-            # Simple backtest implementation
+            # Use vectorized Numba-compiled backtest if available and enabled (3-5x faster)
+            if USE_VECTORIZED_BACKTEST and VECTORIZED_BACKTEST_AVAILABLE:
+                return run_vectorized_backtest(signals, data, trading_config, execution_config)
+
+            # Fall back to original Python loop implementation
             if signals is None or signals.empty:
                 return {'metrics': self._get_zero_trade_metrics()}
             
