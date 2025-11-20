@@ -35,6 +35,7 @@ tear_sheets/
 # ----- Data files -----
 data/converted/
 data/*.csv
+data/*.parquet
 
 # Project subfolder outputs (path contains spaces)
 TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/logs/
