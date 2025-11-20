@@ -152,16 +152,23 @@ def orchestrate_pipeline(state: PipelineState) -> Dict[str, Any]:
         # Phase 5: Parameter Optimization - Delegate to optimization module
         state.update_phase("optimization")
         from optimization import OptunaEngine
-        
-        from optimization.config.optuna_config import OptimizationConfig
-        
-        opt_config = OptimizationConfig()
+
+        from optimization.config.optuna_config import get_preset_config
+
+        # Get preset configuration (aggressive/balanced/conservative)
+        opt_config = get_preset_config(state.optuna_preset)
+
+        # Override with CLI-provided limits
         opt_config.limits.max_trials = state.max_trials
         opt_config.limits.max_workers = state.max_workers  # <-- RECONNECT THE MULTICORE WIRE
         opt_config.limits.timeout_per_trial = state.timeout_per_trial  # CLI: --timeout-per-trial
         opt_config.limits.memory_limit_mb = state.memory_per_worker_mb  # CLI: --memory-per-worker-mb
         opt_config.limits.results_top_n = state.results_top_n  # CLI: --results-top-n
-        
+
+        logger.info(f"Using Optuna preset: {state.optuna_preset} "
+                   f"(TPE startup: {opt_config.tpe_sampler.n_startup_trials}, "
+                   f"pruner warmup: {opt_config.median_pruner.n_warmup_steps})")
+
         engine = OptunaEngine(config=opt_config)
         
         try:

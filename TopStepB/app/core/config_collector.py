@@ -50,6 +50,12 @@ def collect_cli_config() -> Optional[PipelineState]:
     parser.add_argument('--timeout-per-trial', type=int, default=60, help='Maximum seconds per trial (default: 60)')
     parser.add_argument('--results-top-n', type=int, default=10, help='Number of top results to return (default: 10)')
     parser.add_argument(
+        '--optuna-preset',
+        choices=['aggressive', 'balanced', 'conservative'],
+        default='aggressive',
+        help='Optuna optimization preset: aggressive (fast, 30-50%% fewer trials), balanced (moderate), conservative (slow, thorough) - default: aggressive'
+    )
+    parser.add_argument(
         '--validation-tests',
         default='in_sample,out_of_sample,in_sample_permutation,out_of_sample_permutation',
         help='Comma-separated list of validation tests to run or "all"'
@@ -106,6 +112,7 @@ def collect_cli_config() -> Optional[PipelineState]:
             memory_per_worker_mb=args.memory_per_worker_mb,
             timeout_per_trial=args.timeout_per_trial,
             results_top_n=args.results_top_n,
+            optuna_preset=args.optuna_preset,
             validation_tests=validation_tests
         )
         

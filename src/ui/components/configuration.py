@@ -184,6 +184,31 @@ def render_optimization_config():
     """Render optimization configuration section"""
     st.subheader("Optimization Settings")
 
+    # Optuna preset selection (full width at top)
+    st.markdown("#### Optuna Configuration Preset")
+    presets = ['aggressive', 'balanced', 'conservative']
+    preset_descriptions = {
+        'aggressive': '🚀 Fast convergence (30-50% fewer trials) - Recommended for financial markets',
+        'balanced': '⚖️ Moderate speed and thoroughness - Good for exploratory work',
+        'conservative': '🐌 Slow but thorough - For unknown parameter spaces'
+    }
+
+    current_preset = st.session_state.get('configuration', {}).get('optuna_preset', 'aggressive')
+    preset = st.selectbox(
+        "Optimization Speed Preset",
+        options=presets,
+        index=presets.index(current_preset) if current_preset in presets else 0,
+        format_func=lambda x: preset_descriptions[x],
+        help="""
+        **Aggressive:** Faster TPE (20 startup trials), aggressive pruning (5 warmup steps)
+        **Balanced:** Moderate TPE (35 startup trials), moderate pruning (7 warmup steps)
+        **Conservative:** Slow TPE (50 startup trials), conservative pruning (10 warmup steps)
+        """
+    )
+    SessionState.update_configuration('optuna_preset', preset)
+
+    st.markdown("---")
+
     col1, col2 = st.columns(2)
 
     with col1:

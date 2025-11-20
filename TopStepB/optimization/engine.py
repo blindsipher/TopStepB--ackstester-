@@ -31,7 +31,7 @@ from pathlib import Path
 import optuna
 from optuna import Trial, Study
 from optuna.samplers import TPESampler
-from optuna.pruners import MedianPruner
+from optuna.pruners import MedianPruner, PercentilePruner
 from optuna.storages import RDBStorage
 import numpy as np
 
@@ -268,22 +268,34 @@ class OptunaEngine:
             
             # Configure sampler and pruner - OPTIMIZED for Phase 3
             sampler = TPESampler(
-                n_startup_trials=self.config.tpe_sampler.n_startup_trials,    # 50 for faster activation
+                n_startup_trials=self.config.tpe_sampler.n_startup_trials,    # Configurable via preset
                 multivariate=self.config.tpe_sampler.multivariate,            # True for correlations
                 group=self.config.tpe_sampler.group,                          # True for mixed types
                 prior_weight=self.config.tpe_sampler.prior_weight,
-                consider_prior=self.config.tpe_sampler.consider_prior,
+                consider_prior=self.config.tpe_sampler.consider_prior,        # Configurable via preset
                 consider_endpoints=self.config.tpe_sampler.consider_endpoints,
                 warn_independent_sampling=self.config.tpe_sampler.warn_independent_sampling,  # False to suppress warnings
                 seed=getattr(self.config.tpe_sampler, 'seed', 42)             # ADDED: Reproducible results
             )
-            
-            pruner = MedianPruner(
-                n_startup_trials=self.config.median_pruner.n_startup_trials,
-                n_warmup_steps=self.config.median_pruner.n_warmup_steps,
-                interval_steps=self.config.median_pruner.interval_steps,
-                n_min_trials=self.config.median_pruner.n_min_trials
-            )
+
+            # Select pruner based on configuration
+            if self.config.pruner_type == 'percentile':
+                pruner = PercentilePruner(
+                    percentile=self.config.percentile_pruner.percentile,
+                    n_startup_trials=self.config.percentile_pruner.n_startup_trials,
+                    n_warmup_steps=self.config.percentile_pruner.n_warmup_steps,
+                    interval_steps=self.config.percentile_pruner.interval_steps,
+                    n_min_trials=self.config.percentile_pruner.n_min_trials
+                )
+                logger.info(f"Using PercentilePruner (percentile={self.config.percentile_pruner.percentile})")
+            else:
+                pruner = MedianPruner(
+                    n_startup_trials=self.config.median_pruner.n_startup_trials,
+                    n_warmup_steps=self.config.median_pruner.n_warmup_steps,
+                    interval_steps=self.config.median_pruner.interval_steps,
+                    n_min_trials=self.config.median_pruner.n_min_trials
+                )
+                logger.info(f"Using MedianPruner (n_startup_trials={self.config.median_pruner.n_startup_trials})")
             
             # Try PostgreSQL first, fallback to SQLite if unavailable
             logger.info(f"Creating Optuna RDBStorage with PostgreSQL: {database_url}")

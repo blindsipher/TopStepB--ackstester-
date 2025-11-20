@@ -110,6 +110,10 @@ class PipelineService:
             "--results-top-n", str(config.get('results_top_n', 10)),
         ])
 
+        # Optuna preset configuration
+        if config.get('optuna_preset'):
+            args.extend(["--optuna-preset", config['optuna_preset']])
+
         # Optional: validation tests
         if config.get('validation_tests'):
             args.extend(["--validation-tests", config['validation_tests']])

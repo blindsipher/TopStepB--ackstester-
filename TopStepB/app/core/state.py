@@ -48,6 +48,7 @@ class PipelineState:
     memory_per_worker_mb: int = 1500
     timeout_per_trial: int = 60
     results_top_n: int = 10
+    optuna_preset: str = 'aggressive'  # Optuna configuration preset: aggressive, balanced, or conservative
 
     # Validation Configuration - which tests to execute
     validation_tests: List[str] = field(
