@@ -45,6 +45,67 @@ def _load_data(state: PipelineState) -> tuple[bool, str | None]:
     return True, None
 
 
+def _apply_regime_filter(state: PipelineState) -> tuple[bool, str | None]:
+    """Apply regime-based filtering to data before optimization."""
+    import time
+
+    state.update_phase("regime_detection")
+    logger.info(f"Applying regime filter: {state.regime_types} (lookback={state.regime_lookback})")
+
+    try:
+        # Import regime detector
+        from data.regime_detector import detect_regime
+
+        # Measure performance
+        start_time = time.time()
+
+        # Detect regimes
+        regimes = detect_regime(
+            state.full_data,
+            lookback=state.regime_lookback
+        )
+
+        # Filter to specified regime types
+        mask = regimes.isin(state.regime_types)
+        filtered_data = state.full_data[mask].copy()
+
+        detection_time = time.time() - start_time
+
+        # Validate minimum bars requirement
+        if len(filtered_data) < state.min_regime_bars:
+            error_msg = (
+                f"Only {len(filtered_data)} bars found in regimes {state.regime_types}. "
+                f"Required minimum: {state.min_regime_bars} bars. "
+                f"Try different regime types, reduce --min-regime-bars, or disable regime filtering."
+            )
+            logger.error(error_msg)
+            return False, error_msg
+
+        # Update state with filtered data
+        original_bars = len(state.full_data)
+        state.full_data = filtered_data
+        filtered_bars = len(filtered_data)
+        filter_percentage = (filtered_bars / original_bars) * 100
+
+        logger.info(
+            f"Regime filtering completed in {detection_time:.3f}s: "
+            f"{original_bars} bars → {filtered_bars} bars ({filter_percentage:.1f}%)"
+        )
+
+        # Add performance warning if too slow
+        if detection_time > 1.0:
+            state.add_warning(
+                f"Regime detection took {detection_time:.3f}s (target: <1s for 5000 bars)"
+            )
+
+        return True, None
+
+    except Exception as e:
+        error_msg = f"Regime filtering failed: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, error_msg
+
+
 def _discover_strategy(state: PipelineState) -> tuple[bool, Dict[str, Any] | None, str | None]:
     """Locate and instantiate the requested strategy."""
 
@@ -93,6 +154,12 @@ def orchestrate_pipeline(state: PipelineState) -> Dict[str, Any]:
         success, error_msg = _load_data(state)
         if not success:
             return _create_error_result(state, error_msg or "Data loading failed")
+
+        # Phase 1.5: Regime Detection and Filtering (Optional)
+        if state.use_regime_filter:
+            success, error_msg = _apply_regime_filter(state)
+            if not success:
+                return _create_error_result(state, error_msg or "Regime filtering failed")
 
         # Phase 2: Strategy Discovery - Delegate to strategies module
         success, strategy_result, error_msg = _discover_strategy(state)

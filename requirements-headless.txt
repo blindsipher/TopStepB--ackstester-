@@ -1,0 +1,45 @@
+# Headless/CLI-only dependencies for TopStepB pipeline
+# Install with: pip install -r requirements-headless.txt
+#
+# This is a minimal dependency set for running the optimization pipeline
+# on headless Linux servers without any UI components.
+#
+# Python 3.11.9+ recommended for best performance on Linux
+
+# Core numerical and data processing
+numpy>=1.23
+pandas>=2.1
+numba>=0.58  # JIT compilation for regime detection performance
+
+# Optimization engine
+optuna>=3.4
+psutil>=5.9  # System resource monitoring
+
+# Data I/O
+pyarrow>=12  # Fast parquet file reading
+
+# PostgreSQL driver (optional, for Optuna storage)
+psycopg2-binary>=2.9
+
+# Analytics and reporting (matplotlib headless mode works without X11)
+matplotlib>=3.7
+quantstats>=0.0.62
+
+# YAML configuration support
+pyyaml>=6.0
+
+# Development and testing tools (optional, uncomment to install)
+# pytest>=7.4
+# pytest-benchmark>=4.0
+
+# ============================================================================
+# FRONTEND DEPENDENCIES REMOVED
+# ============================================================================
+# The following packages are NOT required for headless operation:
+# - streamlit
+# - plotly
+# - streamlit-aggrid
+# - streamlit-option-menu
+#
+# If you need the UI, install the full requirements.txt instead.
+# ============================================================================

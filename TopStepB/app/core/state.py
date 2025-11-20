@@ -54,8 +54,14 @@ class PipelineState:
     validation_tests: List[str] = field(
         default_factory=lambda: ["in_sample", "out_of_sample"]
     )
-    
-    
+
+    # Regime Detection Configuration
+    use_regime_filter: bool = False  # Enable regime-based data filtering
+    regime_types: List[str] = field(default_factory=list)  # Regime types to include (trending, mean_reverting, choppy)
+    regime_lookback: int = 100  # Lookback period for regime detection
+    min_regime_bars: int = 200  # Minimum bars required in selected regimes
+
+
     # Runtime State (populated during pipeline execution)
     full_data: Optional[pd.DataFrame] = None
     split_result: Optional[Dict[str, Any]] = None

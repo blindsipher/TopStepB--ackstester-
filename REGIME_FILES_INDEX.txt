@@ -1,0 +1,122 @@
+═══════════════════════════════════════════════════════════════════════════════
+               REGIME DETECTION INTEGRATION - FILE INDEX
+═══════════════════════════════════════════════════════════════════════════════
+
+MODIFIED CODE FILES (3)
+═══════════════════════════════════════════════════════════════════════════════
+
+/home/user/TopStepB--ackstester-/TopStepB/app/core/config_collector.py
+  Lines Added: +45
+  Changes: CLI argument parsing for regime detection
+  Purpose: Add 4 new CLI flags (--use-regime-filter, --regime-types, etc.)
+
+/home/user/TopStepB--ackstester-/TopStepB/app/core/state.py
+  Lines Added: +8
+  Changes: Regime configuration fields in PipelineState
+  Purpose: Store regime filter settings in pipeline state
+
+/home/user/TopStepB--ackstester-/TopStepB/app/pipeline.py
+  Lines Added: +65
+  Changes: Regime detection phase implementation
+  Purpose: Filter data by regime before optimization
+
+═══════════════════════════════════════════════════════════════════════════════
+DOCUMENTATION FILES (6)
+═══════════════════════════════════════════════════════════════════════════════
+
+/home/user/TopStepB--ackstester-/README_REGIME_INTEGRATION.md
+  Size: 10 KB
+  Purpose: Main index and navigation document
+  Audience: All users (start here)
+
+/home/user/TopStepB--ackstester-/REGIME_QUICKSTART.md
+  Size: 5.6 KB
+  Purpose: Quick reference with copy-paste commands
+  Audience: Users needing fast examples
+
+/home/user/TopStepB--ackstester-/REGIME_INTEGRATION_GUIDE.md
+  Size: 14 KB (573 lines)
+  Purpose: Complete user documentation and guide
+  Audience: Users implementing regime filtering
+
+/home/user/TopStepB--ackstester-/REGIME_CODE_CHANGES.md
+  Size: 12 KB
+  Purpose: Detailed code changes reference
+  Audience: Developers and code reviewers
+
+/home/user/TopStepB--ackstester-/REGIME_INTEGRATION_REPORT.md
+  Size: 22 KB (800+ lines)
+  Purpose: Technical report with benchmarks
+  Audience: Technical leads and architects
+
+/home/user/TopStepB--ackstester-/REGIME_INTEGRATION_SUMMARY.md
+  Size: 12 KB
+  Purpose: Executive summary and approval status
+  Audience: Management and decision makers
+
+═══════════════════════════════════════════════════════════════════════════════
+DEPENDENCY FILES (1)
+═══════════════════════════════════════════════════════════════════════════════
+
+/home/user/TopStepB--ackstester-/requirements-headless.txt
+  Size: 1.4 KB
+  Purpose: Minimal dependencies for headless Linux servers
+  Usage: pip install -r requirements-headless.txt
+
+═══════════════════════════════════════════════════════════════════════════════
+EXISTING FILES (USED, NOT MODIFIED)
+═══════════════════════════════════════════════════════════════════════════════
+
+/home/user/TopStepB--ackstester-/TopStepB/data/regime_detector.py
+  Status: Used as-is (no changes required)
+  Purpose: Core regime detection algorithms
+  Contains: ADX, volatility, momentum calculations; regime classification
+
+/home/user/TopStepB--ackstester-/TopStepB/main_runner.py
+  Status: No changes required
+  Purpose: Main entry point (already integrated via imports)
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK FILE ACCESS
+═══════════════════════════════════════════════════════════════════════════════
+
+View All Documentation:
+  ls -lh /home/user/TopStepB--ackstester-/REGIME*.md
+
+View Code Changes:
+  cd /home/user/TopStepB--ackstester-/TopStepB/app/core
+  ls -lh config_collector.py state.py
+  cd /home/user/TopStepB--ackstester-/TopStepB/app
+  ls -lh pipeline.py
+
+View Dependencies:
+  cat /home/user/TopStepB--ackstester-/requirements-headless.txt
+
+Test Installation:
+  cd /home/user/TopStepB--ackstester-/TopStepB
+  python main_runner.py --help | grep regime
+
+═══════════════════════════════════════════════════════════════════════════════
+DOCUMENTATION READING ORDER (RECOMMENDED)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. README_REGIME_INTEGRATION.md     Start here - navigation and overview
+2. REGIME_QUICKSTART.md              Quick commands and examples
+3. REGIME_INTEGRATION_GUIDE.md      Complete user guide (if needed)
+4. REGIME_CODE_CHANGES.md            Code details (for developers)
+5. REGIME_INTEGRATION_REPORT.md     Technical analysis (for deep dive)
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE STATISTICS
+═══════════════════════════════════════════════════════════════════════════════
+
+Code Files Modified:        3
+Documentation Files:        6
+Dependency Files:           1
+Total New Files:            7
+
+Code Lines Changed:         ~120 lines
+Documentation Lines:        ~2000 lines
+Total Package Size:         ~80 KB
+
+═══════════════════════════════════════════════════════════════════════════════

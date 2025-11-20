@@ -60,7 +60,31 @@ def collect_cli_config() -> Optional[PipelineState]:
         default='in_sample,out_of_sample,in_sample_permutation,out_of_sample_permutation',
         help='Comma-separated list of validation tests to run or "all"'
     )
-    
+
+    # Regime detection arguments
+    parser.add_argument(
+        '--use-regime-filter',
+        action='store_true',
+        help='Enable regime-based data filtering before optimization'
+    )
+    parser.add_argument(
+        '--regime-types',
+        default='trending',
+        help='Comma-separated regime types to include: trending, mean_reverting, choppy (default: trending)'
+    )
+    parser.add_argument(
+        '--regime-lookback',
+        type=int,
+        default=100,
+        help='Lookback period for regime detection in bars (default: 100)'
+    )
+    parser.add_argument(
+        '--min-regime-bars',
+        type=int,
+        default=200,
+        help='Minimum bars required in selected regimes (default: 200)'
+    )
+
     # Parse arguments
     try:
         args = parser.parse_args()
@@ -93,6 +117,11 @@ def collect_cli_config() -> Optional[PipelineState]:
             t.strip() for t in args.validation_tests.split(',') if t.strip()
         ]
 
+        # Parse regime types
+        regime_types = [
+            r.strip() for r in args.regime_types.split(',') if r.strip()
+        ] if args.use_regime_filter else []
+
         return PipelineState(
             strategy_name=args.strategy,
             symbol=args.symbol,
@@ -113,7 +142,11 @@ def collect_cli_config() -> Optional[PipelineState]:
             timeout_per_trial=args.timeout_per_trial,
             results_top_n=args.results_top_n,
             optuna_preset=args.optuna_preset,
-            validation_tests=validation_tests
+            validation_tests=validation_tests,
+            use_regime_filter=args.use_regime_filter,
+            regime_types=regime_types,
+            regime_lookback=args.regime_lookback,
+            min_regime_bars=args.min_regime_bars
         )
         
     except SystemExit:
@@ -256,6 +289,25 @@ def collect_interactive_config(data_file_override: Optional[str] = None) -> Pipe
     tests_input = input(f"Validation tests (comma-separated or 'all') [default: {tests_default}]: ").strip()
     validation_tests = [t.strip() for t in (tests_input or tests_default).split(',') if t.strip()]
 
+    # Regime detection configuration
+    print("\n8. Regime Detection (Optional):")
+    use_regime = input("Enable regime-based data filtering? (y/N): ").strip().lower()
+    use_regime_filter = use_regime in ['y', 'yes']
+
+    regime_types = []
+    regime_lookback = 100
+    min_regime_bars = 200
+
+    if use_regime_filter:
+        regime_input = input("Regime types to include (comma-separated: trending, mean_reverting, choppy) [default: trending]: ").strip()
+        regime_types = [r.strip() for r in (regime_input or 'trending').split(',') if r.strip()]
+
+        lookback_input = input("Regime lookback period in bars [default: 100]: ").strip()
+        regime_lookback = int(lookback_input) if lookback_input else 100
+
+        min_bars_input = input("Minimum bars required in selected regimes [default: 200]: ").strip()
+        min_regime_bars = int(min_bars_input) if min_bars_input else 200
+
     return PipelineState(
         strategy_name=strategy_name,
         symbol=symbol,
@@ -275,7 +327,11 @@ def collect_interactive_config(data_file_override: Optional[str] = None) -> Pipe
         memory_per_worker_mb=memory_per_worker_mb,
         timeout_per_trial=timeout_per_trial,
         results_top_n=results_top_n,
-        validation_tests=validation_tests
+        validation_tests=validation_tests,
+        use_regime_filter=use_regime_filter,
+        regime_types=regime_types,
+        regime_lookback=regime_lookback,
+        min_regime_bars=min_regime_bars
     )
 
 
