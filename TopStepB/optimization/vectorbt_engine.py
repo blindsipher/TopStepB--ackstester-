@@ -129,13 +129,8 @@ class VectorBTPortfolioEngine:
                 (self.commission_per_trade + self.slippage_cost_per_trade) * total_trades
             )
 
-            # Add legacy daily_pnl format for backwards compatibility
-            try:
-                daily_pnl_dict = self._calculate_daily_pnl(portfolio, data)
-                metrics['daily_pnl'] = daily_pnl_dict
-            except Exception as e:
-                logger.warning(f"Could not calculate daily_pnl dict format: {e}")
-                metrics['daily_pnl'] = {}
+            # REMOVED: Legacy daily_pnl dict calculation - VectorBTValidator already provides this
+            metrics['daily_pnl'] = {}  # Set empty dict for compatibility
 
             logger.debug(f"Metrics extracted: {total_trades} trades, "
                         f"${metrics.get('total_dollar_pnl', 0):.2f} P&L, "
@@ -207,77 +202,7 @@ class VectorBTPortfolioEngine:
 
         return freq_map.get(timeframe, '1min')  # Default to 1min
 
-    def _calculate_daily_pnl(self, portfolio: vbt.Portfolio, data: pd.DataFrame) -> Dict[Any, float]:
-        """
-        Calculate daily P&L aggregation using VectorBT's native vectorization.
-
-        Replaces manual trade iteration with efficient numpy/pandas operations.
-        Uses portfolio equity changes resampled to daily frequency for much better performance.
-
-        Args:
-            portfolio: VectorBT Portfolio object
-            data: Original OHLCV data
-
-        Returns:
-            Dict mapping date to daily P&L (float values)
-        """
-        try:
-            # Get portfolio value (equity curve)
-            portfolio_value = portfolio.value()
-
-            # Handle zero-trade edge case gracefully
-            if len(portfolio_value) == 0:
-                if len(data) > 0:
-                    first_date = data.index[0].date() if hasattr(data.index[0], 'date') else str(data.index[0])
-                    return {first_date: 0.0}
-                return {}
-
-            # Calculate daily P&L by resampling portfolio value and taking differences
-            try:
-                # Resample to daily using last value of each day
-                daily_values = portfolio_value.resample('D').last()
-
-                # Calculate daily changes (P&L)
-                daily_pnl_series = daily_values.diff().fillna(0.0)
-
-                # Convert to dictionary mapping date -> P&L
-                # Use date() if index has datetime, otherwise use raw index value
-                daily_pnl = {}
-                for date, pnl in daily_pnl_series.items():
-                    date_key = date.date() if hasattr(date, 'date') else date
-                    daily_pnl[date_key] = float(pnl)
-
-                # Return non-empty dict, or fallback to zero P&L for first date
-                return daily_pnl if daily_pnl else {
-                    (data.index[0].date() if hasattr(data.index[0], 'date') else data.index[0]): 0.0
-                }
-
-            except (AttributeError, TypeError):
-                # Fallback: if resample fails (e.g., no datetime index),
-                # use alternative vectorized approach
-                logger.debug("Daily resampling failed, using equity curve diff fallback")
-
-                # Calculate P&L changes directly from portfolio value
-                pnl_changes = portfolio_value.diff().fillna(0.0)
-
-                # Map to data index dates
-                daily_pnl = {}
-                for idx, pnl in enumerate(pnl_changes):
-                    if idx < len(data):
-                        date_key = data.index[idx].date() if hasattr(data.index[idx], 'date') else data.index[idx]
-                        daily_pnl[date_key] = daily_pnl.get(date_key, 0.0) + float(pnl)
-
-                return daily_pnl if daily_pnl else {
-                    (data.index[0].date() if hasattr(data.index[0], 'date') else data.index[0]): 0.0
-                }
-
-        except Exception as e:
-            logger.warning(f"Daily P&L calculation failed: {e}")
-            # Return zero P&L for first date as fallback
-            if len(data) > 0:
-                first_date = data.index[0].date() if hasattr(data.index[0], 'date') else str(data.index[0])
-                return {first_date: 0.0}
-            return {}
+    
 
     def _get_zero_trade_metrics(self) -> Dict[str, Any]:
         """

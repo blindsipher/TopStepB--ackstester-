@@ -382,7 +382,7 @@ class TestIndicatorCache:
 # INTEGRATION TESTS
 # ==============================================================================
 
-class TestOptuna Integration:
+class TestOptunaIntegration:
     """Test VectorBT integration with Optuna optimization."""
 
     def test_multiple_trial_simulation(self, trading_config, execution_config, sample_ohlcv_data):
