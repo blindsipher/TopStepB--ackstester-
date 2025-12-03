@@ -59,7 +59,7 @@ class BollingerSqueezeStrategy(BaseStrategy):
         self.validate_data(data)
         
         # Calculate all indicators (CPU-only)
-        indicators = calculate_all_indicators(data, params, use_gpu=None)
+        indicators = calculate_all_indicators(data, params)
         
         # Phase 1: Generate entry conditions (vectorized for performance)
         entry_signals = self._generate_entry_signals_vectorized(data, indicators, params)

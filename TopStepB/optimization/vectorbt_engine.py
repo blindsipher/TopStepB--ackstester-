@@ -107,7 +107,7 @@ class VectorBTPortfolioEngine:
                 short_entries=short_entries,
                 size=contracts_per_trade,  # Fixed contract size
                 size_type='amount',  # Trade exact number of contracts
-                fees=total_fees_per_trade,  # Total execution cost per trade
+                fixed_fees=total_fees_per_trade,  # FIXED: Use fixed_fees for dollar amounts (not percentage)
                 freq=self._get_frequency_string(),  # Data frequency
                 init_cash=self.initial_cash,  # Starting capital
                 cash_sharing=False,  # No cash sharing between instruments

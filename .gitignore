@@ -45,3 +45,16 @@ TopStepB - MAIN CLEAN - BEFORE SECOND STRATEGY/deployed_strategies/*.py
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Cache files
+.serena/cache/
+
+# Temporary files
+pipdeptree.txt
+optimization_run.log
+
+# Benchmark results
+benchmarks/results/*.log
+
+# Documentation outputs
+docs/benchmarks/*.log

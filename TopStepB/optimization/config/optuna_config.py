@@ -199,10 +199,10 @@ class StorageConfig:
     
     # PostgreSQL connection parameters (Windows installation)
     host: str = "localhost"  # Local connection when running on Windows
-    port: int = 5433  # PostgreSQL 18 port
+    port: int = 5432  # PostgreSQL 17 port
     database: str = "optuna_optimization"
     username: str = "postgres"
-    password: str = "AdminAdmin"
+    password: str = " "  # Single space character
     
     # Study name template
     study_name_template: str = "{strategy}_{symbol}_{timeframe}_{timestamp}"

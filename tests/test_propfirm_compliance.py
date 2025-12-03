@@ -63,11 +63,11 @@ class TestPropFirmCompliance:
         equity_curve = np.array([
             starting_equity,
             starting_equity + 500,
-            starting_equity + 1000,
-            starting_equity - 800,
-            starting_equity - 1200,
-            starting_equity - 600,
-            starting_equity - 300
+            starting_equity + 800,
+            starting_equity - 500,
+            starting_equity - 1000,
+            starting_equity - 400,
+            starting_equity - 200
         ])
         
         # Calculate running maximum and drawdown
