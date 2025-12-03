@@ -207,154 +207,76 @@ class VectorBTPortfolioEngine:
 
         return freq_map.get(timeframe, '1min')  # Default to 1min
 
-    def _extract_metrics(self, portfolio: vbt.Portfolio, data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Extract comprehensive metrics from VectorBT portfolio.
-
-        This method calculates all metrics needed by the optimization engine,
-        maintaining compatibility with the existing objective function.
-
-        Args:
-            portfolio: VectorBT Portfolio object
-            data: Original OHLCV data
-
-        Returns:
-            Dict with all required metrics
-        """
-        try:
-            # Get basic portfolio stats
-            total_return = portfolio.total_return()
-
-            # Handle no-trade case
-            if portfolio.orders.count() == 0:
-                return self._get_zero_trade_metrics()
-
-            # Extract trade-level statistics
-            trades = portfolio.trades
-            trade_count = trades.count()
-
-            if trade_count == 0:
-                return self._get_zero_trade_metrics()
-
-            # Get trade P&L values (after fees)
-            trade_pnls = trades.pnl.values
-            winning_trades = np.sum(trade_pnls > 0)
-            losing_trades = np.sum(trade_pnls < 0)
-
-            # Calculate total dollar P&L
-            total_dollar_pnl = np.sum(trade_pnls)
-
-            # Calculate returns and Sharpe ratio
-            if len(trade_pnls) > 1:
-                trade_returns = trade_pnls / self.initial_cash
-                sharpe_ratio = np.mean(trade_returns) / np.std(trade_returns) if np.std(trade_returns) > 0 else 0.0
-            else:
-                sharpe_ratio = 0.0
-
-            # Calculate win rate
-            win_rate = (winning_trades / trade_count * 100) if trade_count > 0 else 0.0
-
-            # Calculate profit factor
-            gross_profit = np.sum(trade_pnls[trade_pnls > 0]) if np.any(trade_pnls > 0) else 0.0
-            gross_loss = abs(np.sum(trade_pnls[trade_pnls < 0])) if np.any(trade_pnls < 0) else 0.0
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
-
-            # Calculate drawdown metrics
-            equity_curve = portfolio.value()
-            cumulative_max = np.maximum.accumulate(equity_curve)
-            drawdown_dollars = cumulative_max - equity_curve
-            max_drawdown = np.max(drawdown_dollars)
-            max_drawdown_pct = (max_drawdown / self.initial_cash * 100) if self.initial_cash > 0 else 0.0
-
-            # Calculate average trade P&L
-            avg_trade_pnl = total_dollar_pnl / trade_count if trade_count > 0 else 0.0
-
-            # Calculate total execution costs
-            total_commission = self.commission_per_trade * trade_count
-            total_slippage = self.slippage_cost_per_trade * trade_count
-            total_costs = total_commission + total_slippage
-
-            # Extract daily P&L for viability scoring
-            daily_pnl_dict = self._calculate_daily_pnl(portfolio, data)
-
-            # Build metrics dictionary (compatible with existing objective function)
-            metrics = {
-                # Core P&L metrics
-                'total_dollar_pnl': float(total_dollar_pnl),
-                'total_return_percentage': float(total_return * 100),  # Convert to percentage
-                'avg_trade_pnl': float(avg_trade_pnl),
-
-                # Trade statistics
-                'total_trades': int(trade_count),
-                'winning_trades': int(winning_trades),
-                'losing_trades': int(losing_trades),
-                'win_rate': float(win_rate),
-
-                # Risk metrics
-                'sharpe_ratio': float(sharpe_ratio),
-                'profit_factor': float(profit_factor),
-                'max_drawdown_dollars': float(max_drawdown),
-                'max_drawdown_percentage': float(max_drawdown_pct),
-
-                # Execution costs
-                'total_commission_cost': float(total_commission),
-                'total_slippage_cost': float(total_slippage),
-                'total_execution_cost': float(total_costs),
-
-                # Daily P&L (for viability scoring)
-                'daily_pnl': daily_pnl_dict,
-
-                # Equity curve (for detailed analysis)
-                'equity_curve': equity_curve.values.tolist(),
-
-                # Additional metrics
-                'final_equity': float(equity_curve.iloc[-1]),
-                'gross_profit': float(gross_profit),
-                'gross_loss': float(gross_loss),
-            }
-
-            logger.debug(f"Metrics extracted: {trade_count} trades, ${total_dollar_pnl:.2f} P&L, {win_rate:.1f}% win rate")
-
-            return metrics
-
-        except Exception as e:
-            logger.error(f"Metric extraction failed: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return self._get_zero_trade_metrics()
-
     def _calculate_daily_pnl(self, portfolio: vbt.Portfolio, data: pd.DataFrame) -> Dict[Any, float]:
         """
-        Calculate daily P&L aggregation from trades.
+        Calculate daily P&L aggregation using VectorBT's native vectorization.
 
-        This is required for viability scoring in the optimization engine.
+        Replaces manual trade iteration with efficient numpy/pandas operations.
+        Uses portfolio equity changes resampled to daily frequency for much better performance.
 
         Args:
             portfolio: VectorBT Portfolio object
             data: Original OHLCV data
 
         Returns:
-            Dict mapping date to daily P&L
+            Dict mapping date to daily P&L (float values)
         """
         try:
-            trades = portfolio.trades
-            daily_pnl = {}
+            # Get portfolio value (equity curve)
+            portfolio_value = portfolio.value()
 
-            # Group trades by exit date and sum P&L
-            for i in range(len(trades.records)):
-                trade = trades.records[i]
-                exit_idx = trade['exit_idx']
+            # Handle zero-trade edge case gracefully
+            if len(portfolio_value) == 0:
+                if len(data) > 0:
+                    first_date = data.index[0].date() if hasattr(data.index[0], 'date') else str(data.index[0])
+                    return {first_date: 0.0}
+                return {}
 
-                if exit_idx < len(data):
-                    trade_date = data.index[exit_idx].date() if hasattr(data.index[exit_idx], 'date') else str(data.index[exit_idx])
-                    trade_pnl = trade['pnl']
+            # Calculate daily P&L by resampling portfolio value and taking differences
+            try:
+                # Resample to daily using last value of each day
+                daily_values = portfolio_value.resample('D').last()
 
-                    daily_pnl[trade_date] = daily_pnl.get(trade_date, 0.0) + trade_pnl
+                # Calculate daily changes (P&L)
+                daily_pnl_series = daily_values.diff().fillna(0.0)
 
-            return daily_pnl
+                # Convert to dictionary mapping date -> P&L
+                # Use date() if index has datetime, otherwise use raw index value
+                daily_pnl = {}
+                for date, pnl in daily_pnl_series.items():
+                    date_key = date.date() if hasattr(date, 'date') else date
+                    daily_pnl[date_key] = float(pnl)
+
+                # Return non-empty dict, or fallback to zero P&L for first date
+                return daily_pnl if daily_pnl else {
+                    (data.index[0].date() if hasattr(data.index[0], 'date') else data.index[0]): 0.0
+                }
+
+            except (AttributeError, TypeError):
+                # Fallback: if resample fails (e.g., no datetime index),
+                # use alternative vectorized approach
+                logger.debug("Daily resampling failed, using equity curve diff fallback")
+
+                # Calculate P&L changes directly from portfolio value
+                pnl_changes = portfolio_value.diff().fillna(0.0)
+
+                # Map to data index dates
+                daily_pnl = {}
+                for idx, pnl in enumerate(pnl_changes):
+                    if idx < len(data):
+                        date_key = data.index[idx].date() if hasattr(data.index[idx], 'date') else data.index[idx]
+                        daily_pnl[date_key] = daily_pnl.get(date_key, 0.0) + float(pnl)
+
+                return daily_pnl if daily_pnl else {
+                    (data.index[0].date() if hasattr(data.index[0], 'date') else data.index[0]): 0.0
+                }
 
         except Exception as e:
             logger.warning(f"Daily P&L calculation failed: {e}")
+            # Return zero P&L for first date as fallback
+            if len(data) > 0:
+                first_date = data.index[0].date() if hasattr(data.index[0], 'date') else str(data.index[0])
+                return {first_date: 0.0}
             return {}
 
     def _get_zero_trade_metrics(self) -> Dict[str, Any]:
