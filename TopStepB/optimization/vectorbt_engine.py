@@ -22,6 +22,7 @@ import gc
 
 from config.system_config import TradingConfig
 from utils.logger import get_logger
+from optimization.vectorbt_validator import VectorBTValidator
 
 logger = get_logger("vectorbt_engine")
 
@@ -115,8 +116,30 @@ class VectorBTPortfolioEngine:
                 tp_stop=np.inf,  # No automatic take-profit (strategy handles this)
             )
 
-            # Extract metrics from portfolio
-            metrics = self._extract_metrics(portfolio, data)
+            # Extract metrics using VectorBT validator
+            # This provides metrics in the format expected by scorers.py
+            validator = VectorBTValidator(portfolio, strategy_name="backtest")
+            metrics = validator.get_composite_score_metrics(initial_cash=self.initial_cash)
+
+            # Add execution cost details (not in standard stats)
+            total_trades = metrics.get('total_trades', 0)
+            metrics['total_commission_cost'] = float(self.commission_per_trade * total_trades)
+            metrics['total_slippage_cost'] = float(self.slippage_cost_per_trade * total_trades)
+            metrics['total_execution_cost'] = float(
+                (self.commission_per_trade + self.slippage_cost_per_trade) * total_trades
+            )
+
+            # Add legacy daily_pnl format for backwards compatibility
+            try:
+                daily_pnl_dict = self._calculate_daily_pnl(portfolio, data)
+                metrics['daily_pnl'] = daily_pnl_dict
+            except Exception as e:
+                logger.warning(f"Could not calculate daily_pnl dict format: {e}")
+                metrics['daily_pnl'] = {}
+
+            logger.debug(f"Metrics extracted: {total_trades} trades, "
+                        f"${metrics.get('total_dollar_pnl', 0):.2f} P&L, "
+                        f"{metrics.get('win_rate', 0):.1f}% win rate")
 
             # Clean up memory
             del portfolio
@@ -126,7 +149,8 @@ class VectorBTPortfolioEngine:
 
         except Exception as e:
             logger.error(f"Backtest execution failed: {e}")
-            logger.exception("Full traceback:")
+            import traceback
+            logger.error(traceback.format_exc())
             return self._get_zero_trade_metrics()
 
     def _signals_to_entries_exits(self, signals: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
@@ -295,7 +319,8 @@ class VectorBTPortfolioEngine:
 
         except Exception as e:
             logger.error(f"Metric extraction failed: {e}")
-            logger.exception("Full traceback:")
+            import traceback
+            logger.error(traceback.format_exc())
             return self._get_zero_trade_metrics()
 
     def _calculate_daily_pnl(self, portfolio: vbt.Portfolio, data: pd.DataFrame) -> Dict[Any, float]:
@@ -337,27 +362,41 @@ class VectorBTPortfolioEngine:
         Return metrics dictionary for zero-trade scenario.
 
         Used when backtesting produces no trades or fails.
+        Returns metrics in format compatible with scorers.py.
 
         Returns:
             Dict with all metrics set to zero/neutral values
         """
         return {
-            'total_dollar_pnl': 0.0,
-            'total_return_percentage': 0.0,
-            'avg_trade_pnl': 0.0,
-            'total_trades': 0,
-            'winning_trades': 0,
-            'losing_trades': 0,
-            'win_rate': 0.0,
-            'sharpe_ratio': 0.0,
+            # Required for scorers.py composite scoring
+            'daily_pnl_series': [0.0],
+            'equity_curve': [self.initial_cash],
+            'sortino_ratio': 0.0,
+            'pnl': 0.0,
+            'max_drawdown': 0.0,
             'profit_factor': 0.0,
+            'win_rate': 0.0,
+            'total_trades': 0,
+            'total_bars': 1,
+
+            # Dollar-based metrics (institutional fix)
+            'total_dollar_pnl': 0.0,
+            'dollar_pnl_for_optimization': 0.0,
             'max_drawdown_dollars': 0.0,
             'max_drawdown_percentage': 0.0,
+
+            # Additional metrics for compatibility
+            'total_return_percentage': 0.0,
+            'total_return_pct': 0.0,
+            'avg_trade_pnl': 0.0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'sharpe_ratio': 0.0,
+            'calmar_ratio': 0.0,
             'total_commission_cost': 0.0,
             'total_slippage_cost': 0.0,
             'total_execution_cost': 0.0,
-            'daily_pnl': {},
-            'equity_curve': [self.initial_cash],
+            'daily_pnl': {},  # Legacy format
             'final_equity': self.initial_cash,
             'gross_profit': 0.0,
             'gross_loss': 0.0,

@@ -7,7 +7,8 @@ optuna>=3.4
 psutil>=5.9
 pyarrow>=12
 matplotlib>=3.7
-quantstats>=0.0.62
+
+# quantstats>=0.0.62  # REMOVED: VectorBT provides all needed metrics via portfolio.stats()
 
 # VectorBT for high-performance backtesting
 vectorbt>=0.26.0
