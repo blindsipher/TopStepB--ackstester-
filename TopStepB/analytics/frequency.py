@@ -2,8 +2,12 @@ from __future__ import annotations
 
 """
 Frequency helpers for mapping pipeline timeframes to pandas freq strings and
-annualization factors used by QuantStats. Defaults are conservative and can be
-refined per instrument/session.
+annualization factors. These are used by analytics tear sheet generation and
+metric calculations. Defaults are conservative and can be refined per
+instrument/session.
+
+Note: VectorBT uses these same annualization factors for its portfolio.stats()
+calculations, ensuring consistency between analytics and validation metrics.
 """
 
 from typing import Tuple

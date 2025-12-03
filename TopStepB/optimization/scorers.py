@@ -25,13 +25,14 @@ Metrics:
 7. Trade Frequency (5%) - Normalized trading activity
 """
 
-import numpy as np
-from typing import Dict, Any, Optional, Tuple, List
 import logging
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
-from .config.optuna_config import CompositeScoreWeights, MetricNormalizationBounds
+import numpy as np
+
 from config.system_config import AccountConfig
+from .config.optuna_config import CompositeScoreWeights, MetricNormalizationBounds
 
 logger = logging.getLogger(__name__)
 

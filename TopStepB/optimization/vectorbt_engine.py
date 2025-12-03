@@ -13,16 +13,16 @@ Key Features:
 - Financial industry standards compliance
 """
 
-import pandas as pd
-import numpy as np
-import vectorbt as vbt
-from typing import Dict, Any, Optional, Tuple
-from decimal import Decimal
 import gc
 
+import numpy as np
+import pandas as pd
+import vectorbt as vbt
+from typing import Dict, Any, Optional, Tuple
+
 from config.system_config import TradingConfig
-from utils.logger import get_logger
 from optimization.vectorbt_validator import VectorBTValidator
+from utils.logger import get_logger
 
 logger = get_logger("vectorbt_engine")
 
@@ -468,7 +468,7 @@ class IndicatorCache:
             logger.warning(f"Indicator '{name}' not found in cache")
             return None
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear all cached indicators."""
         self._cache.clear()
         self._hit_count.clear()

@@ -13,12 +13,13 @@ Features:
 - No external dependencies (quantstats, etc.)
 """
 
-import pandas as pd
-import numpy as np
-import vectorbt as vbt
-from typing import Dict, Any, Optional, List
-from pathlib import Path
 import json
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import numpy as np
+import pandas as pd
+import vectorbt as vbt
 
 from utils.logger import get_logger
 
@@ -321,7 +322,7 @@ class VectorBTValidator:
         else:
             logger.warning("No trades to export")
 
-    def print_report(self):
+    def print_report(self) -> None:
         """Print report to console."""
         print(self.generate_text_report())
 
@@ -387,7 +388,7 @@ class ValidationComparator:
         self,
         vbt_metrics: Dict[str, Any],
         original_metrics: Dict[str, Any]
-    ):
+    ) -> None:
         """Print detailed comparison report."""
         comparison = self.compare_metrics(vbt_metrics, original_metrics)
 

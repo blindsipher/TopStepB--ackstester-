@@ -95,9 +95,11 @@ Flow
 Location: analytics/
 
 Flow
-1. Metrics: Compute core and professional metrics (with QuantStats when available)
+1. Metrics: Compute core and professional metrics (VectorBT primary, QuantStats optional fallback for analytics tear sheets)
 2. Plots: Cumulative return and drawdown images (Matplotlib Agg)
 3. Tear Sheets: HTML summaries for in‑sample and out‑of‑sample
+
+Note: VectorBT provides all validation metrics via portfolio.stats(). QuantStats is only used optionally in analytics/engine.py for enhanced tear sheet generation, not for optimization or validation.
 
 ### Phase 7: Packaging (COMPLETE)
 Location: packager/
@@ -132,7 +134,9 @@ Core Dependencies
 - optuna
 - psycopg2‑binary (PostgreSQL)
 - matplotlib (Agg backend)
-- quantstats (optional)
+- vectorbt>=0.26.0 (high-performance backtesting)
+- numba>=0.58.0 (JIT compilation)
+- quantstats (optional, analytics tear sheets only)
 
 Architecture Patterns
 - Orchestrator (data access control)

@@ -22,18 +22,18 @@ system resource constraints and maintaining stability.
 """
 
 import logging
-import time
 import multiprocessing as mp
-import psutil
-from typing import Dict, Any, List, Optional, Callable
-# ProcessPoolExecutor removed - using Optuna's native parallelism
-import threading
 import queue
+import threading
+import time
+from typing import Any, Callable, Dict, List, Optional
 
-# CPU-only: remove GPU/torch handling
-
+import psutil
 from optuna.study import Study
 from optuna.trial import Trial
+
+# CPU-only: remove GPU/torch handling
+# ProcessPoolExecutor removed - using Optuna's native parallelism
 
 # Import optimization components
 from .config.optuna_config import OptimizationConfig

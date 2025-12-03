@@ -2,6 +2,7 @@
 
 **Date:** 2025-12-03
 **Status:** ✅ **VALIDATED AND PRODUCTION READY**
+**Last Updated:** 2025-12-03 (Post validation simplification)
 
 ---
 
@@ -250,3 +251,9 @@ Minor performance optimizations and additional validation can be done iterativel
 **Strategies tested:** BollingerSqueezeStrategy (19 parameters)
 **Data tested:** 1,000 - 5,000 bars
 **Status:** PRODUCTION READY ✅
+
+---
+
+## Note on Validation Simplification
+
+Following the recent commit "feat: Simplify validation by replacing quantstats with VectorBT built-in metrics", the validation pipeline now uses VectorBT's portfolio.stats() for all optimization and validation metrics. QuantStats remains available as an optional dependency in analytics/engine.py for enhanced tear sheet generation, but is no longer required for core functionality.

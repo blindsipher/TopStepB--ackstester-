@@ -9,7 +9,10 @@ import pandas as pd
 import re
 import numpy as np
 
-# QuantStats is optional; provide graceful fallback if unavailable
+# QuantStats is OPTIONAL for enhanced analytics tear sheets only
+# NOTE: Core validation and optimization use VectorBT's portfolio.stats() instead
+# This is only used in analytics/engine.py for professional metric calculations
+# and full HTML tear sheet generation. All optimization metrics come from VectorBT.
 try:
     from quantstats import stats as qs  # type: ignore
     from quantstats import reports as qsr  # type: ignore

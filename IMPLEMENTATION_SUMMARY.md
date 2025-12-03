@@ -3,6 +3,7 @@
 **Status:** ✅ **COMPLETE AND TESTED**
 
 **Date:** 2025-12-03
+**Last Updated:** 2025-12-03 (Post validation simplification)
 
 ---
 
@@ -468,6 +469,22 @@ pytest tests/test_vectorbt_integration.py::TestPerformanceBenchmarks -v -s
 ✅ **Standards:** Financial compliance maintained
 
 **Status:** **PRODUCTION READY** 🚀
+
+---
+
+## Recent Updates
+
+### Validation Simplification (2025-12-03)
+
+The validation pipeline has been simplified to use VectorBT's built-in portfolio.stats() for all metrics:
+
+- ✅ **Removed dependency:** quantstats is no longer required for optimization/validation
+- ✅ **Single source of truth:** VectorBT portfolio.stats() provides all needed metrics
+- ✅ **Better performance:** No separate analysis pass required
+- ✅ **Cleaner code:** Eliminated duplicate metric calculations
+- ✅ **Optional analytics:** QuantStats remains available in analytics/engine.py for enhanced tear sheets
+
+**Impact on existing code:** Zero breaking changes. All existing strategies and optimization workflows continue to work without modification.
 
 ---
 

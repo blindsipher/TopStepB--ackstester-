@@ -28,19 +28,21 @@ The ObjectiveFactory creates closure-based objective functions that:
 
 import logging
 import time
-import numpy as np
-import pandas as pd
-from typing import Dict, Any, List, Callable, Optional, Union, Tuple
 from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 import optuna
 from optuna.trial import Trial
+import pandas as pd
+
 # CPU-only: no GPU/torch dependency
 
 # No direct module imports - use orchestrated components from pipeline
 
 # Import optimization components
-from .scorers import CompositeScore
 from .config.optuna_config import OptimizationConfig
+from .scorers import CompositeScore
 from .vectorbt_engine import VectorBTPortfolioEngine
 
 logger = logging.getLogger(__name__)

@@ -12,14 +12,15 @@ Features:
 - Comparative benchmarks (VectorBT vs loop-based)
 """
 
-import time
-import psutil
-import pandas as pd
-import numpy as np
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass, field
-from contextlib import contextmanager
 import gc
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import psutil
 
 from utils.logger import get_logger
 
