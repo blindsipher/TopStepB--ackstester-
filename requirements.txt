@@ -9,6 +9,13 @@ pyarrow>=12
 matplotlib>=3.7
 quantstats>=0.0.62
 
+# VectorBT for high-performance backtesting
+vectorbt>=0.26.0
+
+# Performance acceleration
+numba>=0.58.0  # JIT compilation for vectorbt
+bottleneck>=1.3.7  # Fast array operations
+
 # PostgreSQL driver (used when Optuna storage is set to PostgreSQL)
 psycopg2-binary>=2.9
 
