@@ -160,7 +160,7 @@ class VectorBTValidator:
             'calmar_ratio': float(stats.get('Calmar Ratio', 0)),
 
             # Return percentage for reference
-            'total_return_pct': float(stats.get('Total Return [%]', 0)),
+            'total_return_percentage': float(stats.get('Total Return [%]', 0)),
         }
 
     def _calculate_futures_metrics(self) -> Dict[str, Any]:

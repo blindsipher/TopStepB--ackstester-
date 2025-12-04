@@ -234,7 +234,6 @@ class VectorBTPortfolioEngine:
 
             # Additional metrics for compatibility
             'total_return_percentage': 0.0,
-            'total_return_pct': 0.0,
             'avg_trade_pnl': 0.0,
             'winning_trades': 0,
             'losing_trades': 0,
